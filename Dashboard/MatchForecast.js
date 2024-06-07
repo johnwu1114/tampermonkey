@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Match Forecast
 // @namespace    http://tampermonkey.net/
-// @version      0.1
+// @version      0.2
 // @description  This is a script to calculate the forecast of Over/Under and Asian Handicap based on the score input in Kibana Markdown visualization.
 // @author       John Wu
 // @match        http://*.252:5601/*
@@ -13,81 +13,160 @@
     'use strict';
 
     const forecast = {
+        targets: ["forecast_1x2", "forecast_ou", "forecast_ah", "forecast_cs"],
+        isRendered: {},
         start: function () {
             const self = this;
             // 創建一個 MutationObserver 來監視 DOM 變化
             const observer = new MutationObserver(function (mutations) {
                 mutations.forEach(function (mutation) {
-                    if (mutation.addedNodes.length == 0) return;
-                    $(mutation.addedNodes).each(function () {
-                        if (!$(this).is("div.kbnMarkdown__body") && !$(this).find("div.kbnMarkdown__body").length) return;
+                    if (mutation.addedNodes.length == 0) {
+                        self.registerTable();
+                    } else {
+                        $(mutation.addedNodes).each(function () {
+                            if (!$(this).is("div.kbnMarkdown__body") && !$(this).find("div.kbnMarkdown__body").length) return;
 
-                        self.setupScoreInput();
-                    });
+                            self.setupMarkdown();
+                        });
+                    }
                 });
             });
             observer.observe(document.body, { childList: true, subtree: true });
         },
-        getWinLossColor: function (input) {
-            const value = this.parseAmount(input);
-            return value < 0 ? "rgb(253, 47, 5)" : value > 0 ? "rgb(6, 185, 84)" : "";
+        colorWinLoss: function (target) {
+            const value = this.parseAmount(target.text());
+            const color = value < 0 ? "rgb(253, 47, 5)" : value > 0 ? "rgb(6, 185, 84)" : "";
+            target.css("color", color);
         },
         parseAmount: function (input) {
             return parseFloat(input.toString().trim().replace(/,/g, ""))
         },
-        setupScoreInput: function () {
+        toAmountStr: function (input) {
+            return input.toFixed(2).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        },
+        setupMarkdown: function () {
             const self = this;
             const markdownBody = $("div.kbnMarkdown__body");
             if (!markdownBody.length || $('#forecast_score').length) return;
 
             let html = markdownBody.html();
-            if (html.includes("@forecast_score")) {
-                html = html.replace(/@forecast_score/g, '<input id="forecast_score" type="text" class="euiFieldText euiFieldText--fullWidth">');
-                markdownBody.html(html);
-                $('#forecast_score').on('change', function () {
-                    self.calculateOverUnder();
-                    self.calculateAsianHandicap();
-                });
-                $('#forecast_score').val("0-0");
 
-                self.setupTable();
+            self.targets.concat(["forecast"]).forEach(function (target) {
+                let template = "{{" + target + "_totalForecast}}";
+                if (html.includes(template)) {
+                    html = html.replace(template, "<div id='" + target + "_totalForecast' />");
+                    markdownBody.html(html);
+                }
+            });
+
+            if (html.includes("{{forecast_score}}")) {
+                html = html.replace("{{forecast_score}}", "<input id='forecast_score' type='text' class='euiFieldText euiFieldText--fullWidth'>");
+                markdownBody.html(html);
+                $("#forecast_score").on("change", self.render);
+                $("#forecast_score").val("0-0");
+                self.registerTable();
             }
         },
-        setupTable: function () {
-            let intervalCount = 0;
-            const interval = setInterval(function () {
-                if ($("[data-type='forecast_ou']").length !== 0 && $("[data-type='forecast_ah']").length !== 0) {
-                    if (intervalCount++ > 10) clearInterval(interval);
-                    return;
-                }
+        registerTable: function () {
+            const self = this;
+            const selector = self.targets.map(function (target) { return "[data-type='" + target + "']"; }).join(",");
+            if ($(selector).length !== 0) return;
 
-                $("table.table-condensed").filter(function () {
-                    return $(this).html().includes("@forecast_ou");
-                }).each(function () {
-                    $(this).attr("data-type", "forecast_ou");
-                });
-
-                $("table.table-condensed").filter(function () {
-                    return $(this).html().includes("@forecast_ah");
-                }).each(function () {
-                    $(this).attr("data-type", "forecast_ah");
+            setTimeout(function () {
+                console.log("registerTable");
+                self.targets.forEach(function (target) {
+                    $("table.table-condensed").filter(function () {
+                        return $(this).html().includes("{{" + target + "}}");
+                    }).each(function () {
+                        console.log("register " + target);
+                        $(this).attr("data-type", target);
+                        self.render();
+                    });
                 });
             }, 1000);
         },
-        calculateOverUnder: function () {
+        render: function () {
+            forecast.isRendered = {};
+            forecast.render1x2();
+            forecast.renderAsianHandicap();
+            forecast.renderOverUnder();
+            forecast.renderCorrectScore();
+
+            let totalForecast = 0;
+            forecast.targets.forEach(function (target) {
+                totalForecast += forecast.parseAmount($("#" + target + "_totalForecast").text()) || 0;
+            });
+            forecast.colorWinLoss($("#forecast_totalForecast").text(forecast.toAmountStr(totalForecast)));
+        },
+        render1x2: function () {
             const self = this;
-            if ($("[data-type='forecast_ou']").length == 0) self.setupTable();
+            const type = "forecast_1x2";
+            const tables = $("[data-type='" + type + "']");
+            if (self.isRendered[type] || tables.length === 0) return;
+            self.isRendered[type] = true;
 
             const inputScore = $("#forecast_score").val().split("-");
-            const goals = parseInt(inputScore[0]) + parseInt(inputScore[1]);
-            $("[data-type='forecast_ou']").each(function () {
-                console.log("calculateOverUnder");
+            const inputScoreDiff = parseInt(inputScore[0]) - parseInt(inputScore[1]);
+            tables.each(function () {
+                console.log("render 1 x 2");
 
-                const grid = $(this);
+                const table = $(this);
+                let totalForecast = 0;
+
+                table.find("tr").each(function () {
+                    const row = $(this);
+                    const cells = row.find("td");
+                    const forecastCell = cells.last();
+                    row.css("background-color", "");
+                    if (forecastCell.length == 0) return;
+
+                    let selection = $(cells.get(0)).text().trim();
+                    let stake = self.parseAmount($(cells.get(2)).text());
+                    let liability = self.parseAmount($(cells.get(3)).text());
+                    let cashoutWinLoss = self.parseAmount($(cells.get(4)).text());
+
+                    let forecast = stake;
+                    if ((inputScoreDiff > 0 && selection == "Home") ||
+                        (inputScoreDiff < 0 && selection == "Away") ||
+                        (inputScoreDiff == 0 && selection == "Draw")) {
+                        forecast = liability * -1;
+                        row.css("background-color", "rgb(255, 255, 200)");
+                    } else {
+                        forecast = stake;
+                    }
+
+                    forecast += cashoutWinLoss;
+                    totalForecast += forecast || 0;
+
+                    forecastCell.text(self.toAmountStr(forecast));
+                    self.colorWinLoss(forecastCell);
+                });
+
+                table.find("tfoot th:nth-child(-n+1)").text("");
+                table.find("tfoot th:last").text(self.toAmountStr(totalForecast));
+                table.find("tfoot th").each(function () { self.colorWinLoss($(this)); });
+                table.find("tfoot").css("border-top", "solid");
+                table.find("tr").each(function () { if ($(this).text().trim() == "") $(this).remove(); });
+                self.colorWinLoss($("#" + type + "_totalForecast").text(self.toAmountStr(totalForecast)));
+            });
+        },
+        renderOverUnder: function () {
+            const self = this;
+            const type = "forecast_ou";
+            const tables = $("[data-type='" + type + "']");
+            if (self.isRendered[type] || tables.length === 0) return;
+            self.isRendered[type] = true;
+
+            const inputScore = $("#forecast_score").val().split("-");
+            const inputGoals = parseInt(inputScore[0]) + parseInt(inputScore[1]);
+            tables.each(function () {
+                console.log("render OverUnder");
+
+                const table = $(this);
                 let totalForecast = 0;
                 let lastHandicap = 0;
 
-                grid.find("tr").each(function () {
+                table.find("tr").each(function () {
                     const row = $(this);
                     const cells = row.find("td");
                     const forecastCell = cells.last();
@@ -103,45 +182,50 @@
                     lastHandicap = handicap + .25;
 
                     let forecast = 0;
-                    if (goals == handicap + .25) forecast = overLiability / 2;
-                    else if (goals == handicap - .25) forecast = underLiability / 2;
-                    else if (goals > handicap) forecast = overLiability;
-                    else if (goals < handicap) forecast = underLiability;
+                    if (inputGoals == handicap + .25) forecast = overLiability / 2;
+                    else if (inputGoals == handicap - .25) forecast = underLiability / 2;
+                    else if (inputGoals > handicap) forecast = overLiability;
+                    else if (inputGoals < handicap) forecast = underLiability;
+                    else if (inputGoals == handicap) {
+                        forecast = 0;
+                        row.css("background-color", "rgb(255, 255, 200)");
+                    }
                     else {
                         forecastCell.css("color", "").text("");
                         return;
                     }
-                    
+
                     forecast += cashoutWinLoss;
                     totalForecast += forecast || 0;
 
-                    forecastCell
-                        .css("color", self.getWinLossColor(forecast))
-                        .text(forecast.toFixed(2).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","));
+                    forecastCell.text(self.toAmountStr(forecast));
+                    self.colorWinLoss(forecastCell);
                 });
 
-                grid.find("tfoot th:nth-child(-n+3)").text("");
-                grid.find("tfoot th:last").text(totalForecast.toFixed(2).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","));
-                grid.find("tfoot th").each(function () {
-                    $(this).css("color", self.getWinLossColor($(this).text()))
-                });
-                grid.find("tfoot").css("border-top", "solid");
-                grid.find("tr").each(function () { if ($(this).text().trim() == "") $(this).remove(); });
+                table.find("tfoot th:nth-child(-n+3)").text("");
+                table.find("tfoot th:last").text(self.toAmountStr(totalForecast));
+                table.find("tfoot th").each(function () { self.colorWinLoss($(this)); });
+                table.find("tfoot").css("border-top", "solid");
+                table.find("tr").each(function () { if ($(this).text().trim() == "") $(this).remove(); });
+                self.colorWinLoss($("#" + type + "_totalForecast").text(self.toAmountStr(totalForecast)));
             });
         },
-        calculateAsianHandicap: function () {
+        renderAsianHandicap: function () {
             const self = this;
-            if ($("[data-type='forecast_ah']").length == 0) self.setupTable();
+            const type = "forecast_ah";
+            const tables = $("[data-type='" + type + "']");
+            if (self.isRendered[type] || tables.length === 0) return;
+            self.isRendered[type] = true;
 
             const inputScore = $("#forecast_score").val().split("-");
             const inputScoreDiff = parseInt(inputScore[0]) - parseInt(inputScore[1]);
-            $("[data-type='forecast_ah']").each(function () {
-                console.log("calculateAsianHandicap");
+            tables.each(function () {
+                console.log("render AsianHandicap");
 
-                const grid = $(this);
+                const table = $(this);
                 let totalForecast = 0;
 
-                grid.find("tr").each(function () {
+                table.find("tr").each(function () {
                     const row = $(this);
                     const cells = row.find("td");
                     const forecastCell = cells.last();
@@ -188,24 +272,67 @@
                         return;
                     }
 
-                    // if ($("#forecast_score").val().trim() == $(cells.get(0)).text().trim())
-                    //     row.css("background-color", "rgb(255, 255, 200)");
-
                     forecast += cashoutWinLoss;
                     totalForecast += forecast || 0;
 
-                    forecastCell
-                        .css("color", self.getWinLossColor(forecast))
-                        .text(forecast.toFixed(2).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","));
+                    forecastCell.text(self.toAmountStr(forecast));
+                    self.colorWinLoss(forecastCell);
                 });
 
-                grid.find("tfoot th:nth-child(-n+7)").text("");
-                grid.find("tfoot th:last").text(totalForecast.toFixed(2).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","));
-                grid.find("tfoot th").each(function () {
-                    $(this).css("color", self.getWinLossColor($(this).text()))
+                table.find("tfoot th:nth-child(-n+7)").text("");
+                table.find("tfoot th:last").text(self.toAmountStr(totalForecast));
+                table.find("tfoot th").each(function () { self.colorWinLoss($(this)); });
+                table.find("tfoot").css("border-top", "solid");
+                table.find("tr").each(function () { if ($(this).text().trim() == "") $(this).remove(); });
+                self.colorWinLoss($("#" + type + "_totalForecast").text(self.toAmountStr(totalForecast)));
+            });
+        },
+        renderCorrectScore: function () {
+            const self = this;
+            const type = "forecast_cs";
+            const tables = $("[data-type='" + type + "']");
+            if (self.isRendered[type] || tables.length === 0) return;
+            self.isRendered[type] = true;
+
+            const inputScore = $("#forecast_score").val().trim();
+            tables.each(function () {
+                console.log("render CorrectScore");
+
+                const table = $(this);
+                let totalForecast = 0;
+
+                table.find("tr").each(function () {
+                    const row = $(this);
+                    const cells = row.find("td");
+                    const forecastCell = cells.last();
+                    row.css("background-color", "");
+                    if (forecastCell.length == 0) return;
+
+                    let score = $(cells.get(0)).text().trim();
+                    let stake = self.parseAmount($(cells.get(2)).text());
+                    let liability = self.parseAmount($(cells.get(3)).text());
+                    let cashoutWinLoss = self.parseAmount($(cells.get(4)).text());
+
+                    if (score == "") return;
+
+                    let forecast = stake;
+                    if (inputScore == score) {
+                        forecast = liability * -1;
+                        row.css("background-color", "rgb(255, 255, 200)");
+                    }
+                    forecast += cashoutWinLoss;
+                    totalForecast += forecast || 0;
+
+                    forecastCell.text(self.toAmountStr(forecast));
+                    self.colorWinLoss(forecastCell);
                 });
-                grid.find("tfoot").css("border-top", "solid");
-                grid.find("tr").each(function () { if ($(this).text().trim() == "") $(this).remove(); });
+
+                table.find("tfoot th:nth-child(-n+1)").text("");
+                table.find("tfoot th:last").text(self.toAmountStr(totalForecast));
+                table.find("tfoot th").each(function () { self.colorWinLoss($(this)); });
+                table.find("tfoot").css("border-top", "solid");
+                table.find("tr").each(function () { if ($(this).text().trim() == "") $(this).remove(); });
+                self.colorWinLoss($("#" + type + "_totalForecast").text(self.toAmountStr(totalForecast)));
             });
         }
     };
