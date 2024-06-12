@@ -5,6 +5,7 @@
 // @description  Forecast the markets based on the score inputted and the table data in the dashboard.
 // @author       John Wu
 // @match        http://*.252:5601/*
+// @match        http://operation.uat.share.com/*
 // @grant        none
 // @require      https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js
 // ==/UserScript==
