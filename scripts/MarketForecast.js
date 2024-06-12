@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Market Forecast
 // @namespace    http://tampermonkey.net/
-// @version      0.3
+// @version      1.0
 // @description  Forecast the markets based on the score inputted and the table data in the dashboard.
 // @author       John Wu
 // @match        http://*.252:5601/*
@@ -12,6 +12,7 @@
 (function () {
     "use strict";
     const $ = window.jQuery;
+    const version = "1.0";
 
     const utils = {
         colorWinLoss(target) {
@@ -63,7 +64,23 @@
             markdownBody.html(html);
             $("#forecast_score").on("change", this.render.bind(this)).val("0-0");
 
-            markdownBody.find("blockquote").remove();
+            let supportVersion = "0";
+            markdownBody.find("code").each((_, code) => {
+                const text = $(code).text().trim();
+                if (text.indexOf("version") === -1) return;
+                $(code).remove();
+
+                supportVersion = text.replace("version:", "").trim();
+            });
+
+            console.log("Support version:", supportVersion, "Current version:", version);
+            if (version >= supportVersion) {
+                markdownBody.find("blockquote").find("h2").remove();
+                // Temporarily remove h2 tags
+                markdownBody.find("h2").remove();
+            }
+
+            markdownBody.find("blockquote").find("h1").remove();
         },
         setupTable() {
             if (Date.now() - this.registeredTime < 1000 || $(this.targets.map(type => `[data-type="${type}"]`).join(",")).length !== 0) return;
@@ -102,13 +119,15 @@
             this.processTables("forecast_1x2", tables, (row, cells) => {
                 let {
                     Selection,
+                    "Void Stake": VoidStake,
+                    "CashOut Stake": CashOutStake,
                     Stake,
                     Liability,
-                    "CashOut WinLoss": cashoutWinLoss
+                    "CashOut WinLoss": CashOutWinLoss
                 } = cells;
-                Stake = utils.parseAmount(Stake);
+                Stake = utils.parseAmount(Stake) - utils.parseAmount(VoidStake || 0) - utils.parseAmount(CashOutStake || 0);
                 Liability = utils.parseAmount(Liability);
-                cashoutWinLoss = utils.parseAmount(cashoutWinLoss);
+                CashOutWinLoss = utils.parseAmount(CashOutWinLoss);
                 let forecast = Stake;
                 if ((inputScoreDiff > 0 && Selection === "Home") ||
                     (inputScoreDiff < 0 && Selection === "Away") ||
@@ -116,7 +135,7 @@
                     forecast = Liability * -1;
                     row.css("background-color", "rgb(255, 255, 200)");
                 }
-                forecast += cashoutWinLoss;
+                forecast += CashOutWinLoss;
                 utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
                 return forecast;
             });
@@ -129,13 +148,19 @@
                 let {
                     Handicap,
                     "Over Stake": OverStake,
+                    "Over Void Stake": OverVoidStake,
+                    "Over CashOut Stake": OverCashOutStake,
                     "Over Liability": OverLiability,
                     "Under Stake": UnderStake,
+                    "Under Void Stake": UnderVoidStake,
+                    "Under CashOut Stake": UnderCashOutStake,
                     "Under Liability": UnderLiability,
-                    "CashOut WinLoss": cashoutWinLoss
+                    "CashOut WinLoss": CashOutWinLoss
                 } = cells;
+                OverStake = utils.parseAmount(OverStake) - utils.parseAmount(OverVoidStake || 0) - utils.parseAmount(OverCashOutStake || 0);
+                UnderStake = utils.parseAmount(UnderStake) - utils.parseAmount(UnderVoidStake || 0) - utils.parseAmount(UnderCashOutStake || 0);
                 Handicap = utils.parseAmount(Handicap === "Over Above" ? lastHandicap : Handicap);
-                cashoutWinLoss = utils.parseAmount(cashoutWinLoss);
+                CashOutWinLoss = utils.parseAmount(CashOutWinLoss);
                 lastHandicap = Handicap + 0.25;
                 const overLiability = (utils.parseAmount(OverLiability) - utils.parseAmount(UnderStake)) * -1;
                 const underLiability = (utils.parseAmount(UnderLiability) - utils.parseAmount(OverStake)) * -1;
@@ -150,7 +175,7 @@
                     forecast = 0;
                 }
 
-                forecast += cashoutWinLoss;
+                forecast += CashOutWinLoss;
                 utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
                 return forecast;
             });
@@ -162,17 +187,21 @@
                 let {
                     Score,
                     Handicap,
-                    "Home Stake": homeStake,
-                    "Away Stake": awayStake,
-                    "Home Liability": homeLiability,
-                    "Away Liability": awayLiability,
-                    "CashOut WinLoss": cashoutWinLoss
+                    "Home Stake": HomeStake,
+                    "Home Void Stake": HomeVoidStake,
+                    "Home CashOut Stake": HomeCashOutStake,
+                    "Away Stake": AwayStake,
+                    "Away Void Stake": AwayVoidStake,
+                    "Away CashOut Stake": AwayCashOutStake,
+                    "Home Liability": HomeLiability,
+                    "Away Liability": AwayLiability,
+                    "CashOut WinLoss": CashOutWinLoss
                 } = cells;
-                homeStake = utils.parseAmount(homeStake);
-                awayStake = utils.parseAmount(awayStake);
-                homeLiability = utils.parseAmount(homeLiability);
-                awayLiability = utils.parseAmount(awayLiability);
-                cashoutWinLoss = utils.parseAmount(cashoutWinLoss);
+                HomeStake = utils.parseAmount(HomeStake) - utils.parseAmount(HomeVoidStake || 0) - utils.parseAmount(HomeCashOutStake || 0);
+                AwayStake = utils.parseAmount(AwayStake) - utils.parseAmount(AwayVoidStake || 0) - utils.parseAmount(AwayCashOutStake || 0);
+                HomeLiability = utils.parseAmount(HomeLiability);
+                AwayLiability = utils.parseAmount(AwayLiability);
+                CashOutWinLoss = utils.parseAmount(CashOutWinLoss);
                 const scoreDiff = Score.indexOf("-") === -1 ? 0 : Score.split("-").map(Number).reduce((a, b) => a - b, 0);
                 if (Handicap === "Over Above") {
                     row.find("td:last").text("Error!!");
@@ -181,13 +210,13 @@
 
                 let originalHandicap = Handicap - scoreDiff;
                 let outcome = inputScoreDiff + originalHandicap;
-                let forecast = this.calculateAsianHandicap(outcome, homeStake, homeLiability);
+                let forecast = this.calculateAsianHandicap(outcome, HomeStake, HomeLiability);
 
                 originalHandicap = Handicap - scoreDiff * -1;
                 outcome = inputScoreDiff * -1 + originalHandicap;
-                forecast += this.calculateAsianHandicap(outcome, awayStake, awayLiability);
+                forecast += this.calculateAsianHandicap(outcome, AwayStake, AwayLiability);
 
-                forecast += cashoutWinLoss;
+                forecast += CashOutWinLoss;
                 utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
                 return forecast;
             });
@@ -198,12 +227,14 @@
                 let {
                     Score,
                     Stake,
+                    "Void Stake": VoidStake,
+                    "CashOut Stake": CashOutStake,
                     Liability,
-                    "CashOut WinLoss": cashoutWinLoss
+                    "CashOut WinLoss": CashOutWinLoss
                 } = cells;
-                Stake = utils.parseAmount(Stake);
+                Stake = utils.parseAmount(Stake) - utils.parseAmount(VoidStake || 0) - utils.parseAmount(CashOutStake || 0);
                 Liability = utils.parseAmount(Liability);
-                cashoutWinLoss = utils.parseAmount(cashoutWinLoss);
+                CashOutWinLoss = utils.parseAmount(CashOutWinLoss);
                 if (!Score) return null;
 
                 let forecast = Stake;
@@ -211,16 +242,18 @@
                     forecast = Liability * -1;
                     row.css("background-color", "rgb(255, 255, 200)");
                 }
-                forecast += cashoutWinLoss;
+                forecast += CashOutWinLoss;
                 utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
                 return forecast;
             });
         },
         processTables(type, tables, processRow) {
-            let totalForecast = 0;
-            tables.each((_, table) => {
-                const headers = $(table).find("thead th").map((_, th) => $(th).text().trim()).get();
-                $(table).find("tr").each((_, row) => {
+            tables.each((_, tab) => {
+                const table = $(tab);
+                let totalForecast = 0;
+
+                const headers = table.find("thead th").map((_, th) => $(th).text().trim()).get();
+                table.find("tr").each((_, row) => {
                     if ($(row).text().trim() === "") {
                         $(row).remove();
                         return;
@@ -236,18 +269,35 @@
                     if (forecast !== null) totalForecast += forecast;
                 });
 
-                this.updateTableFooter($(table), totalForecast);
+                table.find("tfoot th:nth-child(-n+1)").text("");
+                table.find("tfoot").css("border-top", "solid");
+                table.find("tbody td").each((_, td) => {
+                    if ($(td).text().trim() === "0.00") $(td).find("div").text("0");
+                });
+                table.find("tfoot th:last").text(utils.toAmountStr(totalForecast));
                 utils.colorWinLoss($(`#${type}_totalForecast`).text(utils.toAmountStr(totalForecast)));
+
+                // Hide void and cashout columns
+                [
+                    "Void Stake", "CashOut Stake",
+                    "Over Stake", "Over Void Stake", "Over CashOut Stake",
+                    "Under Stake", "Under Void Stake", "Under CashOut Stake",
+                    "Home Stake", "Home Void Stake", "Home CashOut Stake",
+                    "Away Stake", "Away Void Stake", "Away CashOut Stake",
+                ].forEach(name => {
+                    const colNum = headers.indexOf(name) + 1;
+                    if (colNum == 0) return;
+                    table.find("tr").find(`th:nth-child(${colNum}),td:nth-child(${colNum})`).hide();
+                });
+
+                // Color win/loss columns
+                ["CashOut WinLoss", "Forecast"].forEach(name => {
+                    const colNum = headers.indexOf(name) + 1;
+                    if (colNum == 0) return;
+                    table.find("tr").find(`th:nth-child(${colNum}),td:nth-child(${colNum})`)
+                        .each((_, td) => utils.colorWinLoss($(td)));
+                });
             });
-        },
-        updateTableFooter(table, totalForecast) {
-            table.find("tbody td").each((_, td) => {
-                if ($(td).text().trim() === "0.00")$(td).find("div").text("0");
-            });
-            table.find("tfoot th:nth-child(-n+1)").text("");
-            table.find("tfoot th:last").text(utils.toAmountStr(totalForecast));
-            table.find("tfoot th:nth-last-child(-n+2)").each((_, th) => utils.colorWinLoss($(th)));
-            table.find("tfoot").css("border-top", "solid");
         },
         calculateAsianHandicap(outcome, stake, liability) {
             if (outcome >= 0.5) return -liability;
