@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Market Forecast
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  Forecast the markets based on the score inputted and the table data in the dashboard.
 // @author       John Wu
 // @match        http://*.252:5601/*
@@ -30,7 +30,13 @@
     };
 
     const forecast = {
-        targets: ["forecast_1x2", "forecast_ou", "forecast_ah", "forecast_cs"],
+        targets: [
+            "forecast_1x2",
+            "forecast_ou",
+            "forecast_ah",
+            "forecast_cs",
+            "forecast_bts"
+        ],
         isRendered: {},
         registeredTime: 0,
         start() {
@@ -104,12 +110,13 @@
             this.renderTable("forecast_ou", this.renderOverUnder.bind(this));
             this.renderTable("forecast_ah", this.renderAsianHandicap.bind(this));
             this.renderTable("forecast_cs", this.renderCorrectScore.bind(this));
+            this.renderTable("forecast_bts", this.renderBothTeamsToScore.bind(this));
 
             const totalForecast = this.targets.reduce((total, target) => total + (utils.parseAmount($(`#${target}_totalForecast`).text()) || 0), 0);
             utils.colorWinLoss($("#forecast_totalForecast").text(utils.toAmountStr(totalForecast)));
         },
         renderTable(type, renderFunction) {
-            $(`#${type}_totalForecast`).text("0");
+            utils.colorWinLoss($(`#${type}_totalForecast`).text("0"));
             const tables = $(`[data-type="${type}"]`);
             if (this.isRendered[type] || !tables.length) return;
             this.isRendered[type] = true;
@@ -241,6 +248,33 @@
 
                 let forecast = Stake;
                 if (inputScore === Score) {
+                    forecast = Liability * -1;
+                    row.css("background-color", "rgb(255, 255, 200)");
+                }
+                forecast += CashOutWinLoss;
+                utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
+                return forecast;
+            });
+        },
+        renderBothTeamsToScore(tables) {
+            const [homeScore, awayScore] = $("#forecast_score").val().split("-").map(Number);
+            const isBothTeamsToScore = homeScore > 0 && awayScore > 0;
+            this.processTables("forecast_bts", tables, (row, cells) => {
+                let {
+                    Selection,
+                    "Void Stake": VoidStake,
+                    "CashOut Stake": CashOutStake,
+                    Stake,
+                    Liability,
+                    "CashOut WinLoss": CashOutWinLoss
+                } = cells;
+                Stake = utils.parseAmount(Stake) - utils.parseAmount(VoidStake || 0) - utils.parseAmount(CashOutStake || 0);
+                Liability = utils.parseAmount(Liability);
+                CashOutWinLoss = utils.parseAmount(CashOutWinLoss);
+
+                let forecast = Stake;
+                if ((isBothTeamsToScore && Selection === "Yes") ||
+                    (!isBothTeamsToScore && Selection === "No")) {
                     forecast = Liability * -1;
                     row.css("background-color", "rgb(255, 255, 200)");
                 }
