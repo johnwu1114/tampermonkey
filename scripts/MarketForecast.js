@@ -13,7 +13,7 @@
 (function () {
     "use strict";
     const $ = window.jQuery;
-    const version = "1.0";
+    const version = "1.1";
 
     const utils = {
         colorWinLoss(target) {
@@ -35,7 +35,8 @@
             "forecast_ou",
             "forecast_ah",
             "forecast_cs",
-            "forecast_bts"
+            "forecast_bts",
+            "forecast_tgou"
         ],
         isRendered: {},
         registeredTime: 0,
@@ -111,6 +112,7 @@
             this.renderTable("forecast_ah", this.renderAsianHandicap.bind(this));
             this.renderTable("forecast_cs", this.renderCorrectScore.bind(this));
             this.renderTable("forecast_bts", this.renderBothTeamsToScore.bind(this));
+            this.renderTable("forecast_tgou", this.renderTeamGoalsOverUnder.bind(this));
 
             const totalForecast = this.targets.reduce((total, target) => total + (utils.parseAmount($(`#${target}_totalForecast`).text()) || 0), 0);
             utils.colorWinLoss($("#forecast_totalForecast").text(utils.toAmountStr(totalForecast)));
@@ -278,6 +280,47 @@
                     forecast = Liability * -1;
                     row.css("background-color", "rgb(255, 255, 200)");
                 }
+                forecast += CashOutWinLoss;
+                utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
+                return forecast;
+            });
+        },
+        renderTeamGoalsOverUnder(tables) {
+            const [homeScore, awayScore] = $("#forecast_score").val().split("-").map(Number);
+            let lastHandicap = 0;
+            this.processTables("forecast_tgou", tables, (row, cells) => {
+                let {
+                    Handicap,
+                    Team,
+                    "Over Stake": OverStake,
+                    "Over Void Stake": OverVoidStake,
+                    "Over CashOut Stake": OverCashOutStake,
+                    "Over Liability": OverLiability,
+                    "Under Stake": UnderStake,
+                    "Under Void Stake": UnderVoidStake,
+                    "Under CashOut Stake": UnderCashOutStake,
+                    "Under Liability": UnderLiability,
+                    "CashOut WinLoss": CashOutWinLoss
+                } = cells;
+                OverStake = utils.parseAmount(OverStake) - utils.parseAmount(OverVoidStake || 0) - utils.parseAmount(OverCashOutStake || 0);
+                UnderStake = utils.parseAmount(UnderStake) - utils.parseAmount(UnderVoidStake || 0) - utils.parseAmount(UnderCashOutStake || 0);
+                Handicap = utils.parseAmount(Handicap === "Over Above" ? lastHandicap : Handicap);
+                CashOutWinLoss = utils.parseAmount(CashOutWinLoss);
+                lastHandicap = Handicap + 0.25;
+                const overLiability = (utils.parseAmount(OverLiability) - utils.parseAmount(UnderStake)) * -1;
+                const underLiability = (utils.parseAmount(UnderLiability) - utils.parseAmount(OverStake)) * -1;
+
+                let forecast = 0;
+                const goals = Team === "Home" ? homeScore : awayScore;
+                if (goals === Handicap + 0.25) forecast = overLiability / 2;
+                else if (goals === Handicap - 0.25) forecast = underLiability / 2;
+                else if (goals > Handicap) forecast = overLiability;
+                else if (goals < Handicap) forecast = underLiability;
+                else {
+                    row.css("background-color", "rgb(255, 255, 200)");
+                    forecast = 0;
+                }
+
                 forecast += CashOutWinLoss;
                 utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
                 return forecast;
