@@ -109,6 +109,7 @@
             utils.colorWinLoss($("#forecast_totalForecast").text(utils.toAmountStr(totalForecast)));
         },
         renderTable(type, renderFunction) {
+            $(`#${type}_totalForecast`).text("0");
             const tables = $(`[data-type="${type}"]`);
             if (this.isRendered[type] || !tables.length) return;
             this.isRendered[type] = true;
