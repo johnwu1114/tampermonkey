@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Market Forecast
 // @namespace    http://tampermonkey.net/
-// @version      1.4
+// @version      1.5
 // @description  Forecast the markets based on the score inputted and the table data in the dashboard.
 // @author       John Wu
 // @match        http://*.252:5601/*
@@ -13,7 +13,7 @@
 (function () {
     "use strict";
     const $ = window.jQuery;
-    const version = "1.4";
+    const version = "1.5";
 
     const utils = {
         colorWinLoss(target) {
@@ -31,14 +31,22 @@
 
     const forecast = {
         targets: [
-            "forecast_1x2",
-            "forecast_ou",
-            "forecast_ah",
-            "forecast_cs",
-            "forecast_bts",
-            "forecast_tgou",
-            "forecast_cornersou",
-            "forecast_cornersah"
+            "forecast_ft_1x2",
+            "forecast_ft_ou",
+            "forecast_ft_ah",
+            "forecast_ft_cs",
+            "forecast_ft_bts",
+            "forecast_ft_tgou",
+            "forecast_ft_corners_ou",
+            "forecast_ft_corners_ah",
+            "forecast_ht_1x2",
+            "forecast_ht_ou",
+            "forecast_ht_ah",
+            "forecast_ht_cs",
+            "forecast_ht_bts",
+            "forecast_ht_tgou",
+            "forecast_ht_corners_ou",
+            "forecast_ht_corners_ah"
         ],
         summaryCount: 0,
         isRendered: {},
@@ -65,22 +73,26 @@
         },
         setupMarkdown() {
             const markdownBody = $("div.kbnMarkdown__body");
-            if (!markdownBody.length || $("#forecast_score").length) return;
+            if (!markdownBody.length || $("#forecast_ft_score").length) return;
 
             console.log("Setting up markdown...");
-            let html = markdownBody.html();
-            this.targets.concat(["forecast"]).forEach(target => {
-                html = html.replace(`{{${target}_total}}`, `<div id="${target}_total" />`);
+            let html = markdownBody.html()
+                .replace("{{forecast_ft_score}}", "<input id='forecast_ft_score' type='text' class='euiFieldText'>")
+                .replace("{{forecast_ft_corners_score}}", "<input id='forecast_ft_corners_score' type='text' class='euiFieldText'>");
+            this.targets.concat(["forecast_ft", "forecast_ht", "forecast"]).forEach(target => {
+                html = html.replace(`{{${target}_total}}`, `<span id="${target}_total" />`);
             });
-            html = html.replace("{{forecast_score}}", "<div><label>Score</label> <input id='forecast_score' type='text' class='euiFieldText'></div>");
-            html = html.replace("{{forecast_corners_score}}", "<div><label>Corner Score</label> <input id='forecast_corners_score' type='text' class='euiFieldText'></div>");
             markdownBody.html(html);
-            $("#forecast_score").on("change", this.renderByScore.bind(this)).val("0-0");
-            $("#forecast_corners_score").on("change", this.renderByCornersScore.bind(this)).val("0-0");
-            $("#forecast_score,#forecast_corners_score").parent()
-                .css("float", "left")
-                .css("width", "50%")
-                .css("padding", "5px");
+
+            html = markdownBody.html()
+                .replace("{{forecast_ht_score}}", "<input id='forecast_ht_score' type='text' class='euiFieldText'>")
+                .replace("{{forecast_ht_corners_score}}", "<input id='forecast_ht_corners_score' type='text' class='euiFieldText'>");
+            markdownBody.html(html);
+
+            $("#forecast_ft_score").on("change", this.renderByFullTimeScore.bind(this)).val("0-0");
+            $("#forecast_ft_corners_score").on("change", this.renderByFullTimeCorners.bind(this)).val("0-0");
+            $("#forecast_ht_score").on("change", this.renderByHalfTimeScore.bind(this)).val("0-0");
+            $("#forecast_ht_corners_score").on("change", this.renderByHalfTimeCorners.bind(this)).val("0-0");
 
             let supportVersion = "0";
             markdownBody.find("code").each((_, code) => {
@@ -115,43 +127,72 @@
                         .filter((_, table) => $(table).html().includes(`{{${target}}}`))
                         .attr("data-type", target);
                 });
-                this.renderByScore();
-                this.renderByCornersScore();
+                this.renderByFullTimeScore();
+                this.renderByFullTimeCorners();
+                this.renderByHalfTimeScore();
+                this.renderByHalfTimeCorners();
             }, this.delayTime);
         },
-        renderByScore() {
-            console.log("Rendering forecast by score...");
+        renderTotalForecast() {
+            let fullTimeTotal = 0;
+            let halfTimeTotal = 0;
+            this.targets.forEach(target => {
+                const forecast = utils.parseAmount($(`#${target}_total`).text());
+                if (target.includes("_ft_")) fullTimeTotal += forecast;
+                else halfTimeTotal += forecast;
+            });
+            utils.colorWinLoss($("#forecast_ft_total").text(utils.toAmountStr(fullTimeTotal)));
+            utils.colorWinLoss($("#forecast_ht_total").text(utils.toAmountStr(halfTimeTotal)));
+            utils.colorWinLoss($("#forecast_total").text(utils.toAmountStr(fullTimeTotal + halfTimeTotal)));
+        },
+        renderByFullTimeScore() {
+            console.log("Rendering forecast by full time score...");
             this.isRendered = {};
-            this.renderTable("forecast_1x2", this.render1x2.bind(this));
-            this.renderTable("forecast_ou", this.renderOverUnder.bind(this));
-            this.renderTable("forecast_ah", this.renderAsianHandicap.bind(this));
-            this.renderTable("forecast_cs", this.renderCorrectScore.bind(this));
-            this.renderTable("forecast_bts", this.renderBothTeamsToScore.bind(this));
-            this.renderTable("forecast_tgou", this.renderTeamGoalsOverUnder.bind(this));
-
-            const totalForecast = this.targets.reduce((total, target) => total + (utils.parseAmount($(`#${target}_total`).text()) || 0), 0);
-            utils.colorWinLoss($("#forecast_total").text(utils.toAmountStr(totalForecast)));
+            this.renderTable("ft", "1x2", this.render1x2.bind(this));
+            this.renderTable("ft", "ou", this.renderOverUnder.bind(this));
+            this.renderTable("ft", "ah", this.renderAsianHandicap.bind(this));
+            this.renderTable("ft", "cs", this.renderCorrectScore.bind(this));
+            this.renderTable("ft", "bts", this.renderBothTeamsToScore.bind(this));
+            this.renderTable("ft", "tgou", this.renderTeamGoalsOverUnder.bind(this));
+            this.renderTotalForecast();
         },
-        renderByCornersScore() {
-            console.log("Rendering forecast by corners score...");
+        renderByFullTimeCorners() {
+            console.log("Rendering forecast by full time corners...");
             this.isRendered = {};
-            this.renderTable("forecast_cornersou", this.renderCornersOverUnder.bind(this));
-            this.renderTable("forecast_cornersah", this.renderCornersAsianHandicap.bind(this));
-
-            const totalForecast = this.targets.reduce((total, target) => total + (utils.parseAmount($(`#${target}_total`).text()) || 0), 0);
-            utils.colorWinLoss($("#forecast_total").text(utils.toAmountStr(totalForecast)));
+            this.renderTable("ft", "corners_ou", this.renderCornersOverUnder.bind(this));
+            this.renderTable("ft", "corners_ah", this.renderCornersAsianHandicap.bind(this));
+            this.renderTotalForecast();
         },
-        renderTable(type, renderFunction) {
-            utils.colorWinLoss($(`#${type}_total`).text("0"));
-            const tables = $(`[data-type="${type}"]`);
-            if (this.isRendered[type] || !tables.length) return;
-            this.isRendered[type] = true;
-            renderFunction(tables);
+        renderByHalfTimeScore() {
+            console.log("Rendering forecast by full time score...");
+            this.isRendered = {};
+            this.renderTable("ht", "1x2", this.render1x2.bind(this));
+            this.renderTable("ht", "ou", this.renderOverUnder.bind(this));
+            this.renderTable("ht", "ah", this.renderAsianHandicap.bind(this));
+            this.renderTable("ht", "cs", this.renderCorrectScore.bind(this));
+            this.renderTable("ht", "bts", this.renderBothTeamsToScore.bind(this));
+            this.renderTable("ht", "tgou", this.renderTeamGoalsOverUnder.bind(this));
+            this.renderTotalForecast();
         },
-        render1x2(tables) {
-            const [homeScore, awayScore] = $("#forecast_score").val().split("-").map(Number);
+        renderByHalfTimeCorners() {
+            console.log("Rendering forecast by full time corners...");
+            this.isRendered = {};
+            this.renderTable("ht", "corners_ou", this.renderCornersOverUnder.bind(this));
+            this.renderTable("ht", "corners_ah", this.renderCornersAsianHandicap.bind(this));
+            this.renderTotalForecast();
+        },
+        renderTable(ftht, type, renderFunction) {
+            const key = `forecast_${ftht}_${type}`;
+            utils.colorWinLoss($(`#${key}_total`).text("0"));
+            const tables = $(`[data-type="${key}"]`);
+            if (this.isRendered[key] || !tables.length) return;
+            this.isRendered[key] = true;
+            renderFunction(ftht, type, tables);
+        },
+        render1x2(ftht, type, tables) {
+            const [homeScore, awayScore] = $(`#forecast_${ftht}_score`).val().split("-").map(Number);
             const inputScoreDiff = homeScore - awayScore;
-            this.processTables("forecast_1x2", tables, (row, cells) => {
+            this.processTables(ftht, type, tables, (row, cells) => {
                 let {
                     Selection,
                     "Void Stake": VoidStake,
@@ -175,13 +216,13 @@
                 return forecast;
             });
         },
-        renderOverUnder(tables) {
-            const [homeScore, awayScore] = $("#forecast_score").val().split("-").map(Number);
+        renderOverUnder(ftht, type, tables) {
+            const [homeScore, awayScore] = $(`#forecast_${ftht}_score`).val().split("-").map(Number);
             const inputGoals = homeScore + awayScore;
             let lastHandicap = 0;
-            this.processTables("forecast_ou", tables, (row, cells) => {
+            this.processTables(ftht, type, tables, (row, cells) => {
                 let {
-                    Handicap,
+                    Goals,
                     "Over Stake": OverStake,
                     "Over Void Stake": OverVoidStake,
                     "Over CashOut Stake": OverCashOutStake,
@@ -194,17 +235,17 @@
                 } = cells;
                 OverStake = utils.parseAmount(OverStake) - utils.parseAmount(OverVoidStake || 0) - utils.parseAmount(OverCashOutStake || 0);
                 UnderStake = utils.parseAmount(UnderStake) - utils.parseAmount(UnderVoidStake || 0) - utils.parseAmount(UnderCashOutStake || 0);
-                Handicap = utils.parseAmount(Handicap === "Over Above" ? lastHandicap : Handicap);
+                Goals = utils.parseAmount(Goals === "Over Above" ? lastHandicap : Goals);
                 CashOutWinLoss = utils.parseAmount(CashOutWinLoss);
-                lastHandicap = Handicap + 0.25;
+                lastHandicap = Goals + 0.25;
                 const overLiability = (utils.parseAmount(OverLiability) - utils.parseAmount(UnderStake)) * -1;
                 const underLiability = (utils.parseAmount(UnderLiability) - utils.parseAmount(OverStake)) * -1;
 
                 let forecast = 0;
-                if (inputGoals === Handicap + 0.25) forecast = overLiability / 2;
-                else if (inputGoals === Handicap - 0.25) forecast = underLiability / 2;
-                else if (inputGoals > Handicap) forecast = overLiability;
-                else if (inputGoals < Handicap) forecast = underLiability;
+                if (inputGoals === Goals + 0.25) forecast = overLiability / 2;
+                else if (inputGoals === Goals - 0.25) forecast = underLiability / 2;
+                else if (inputGoals > Goals) forecast = overLiability;
+                else if (inputGoals < Goals) forecast = underLiability;
                 else {
                     row.css("background-color", "rgb(255, 255, 200)");
                     forecast = 0;
@@ -215,10 +256,10 @@
                 return forecast;
             });
         },
-        renderAsianHandicap(tables) {
-            const [homeScore, awayScore] = $("#forecast_score").val().split("-").map(Number);
+        renderAsianHandicap(ftht, type, tables) {
+            const [homeScore, awayScore] = $(`#forecast_${ftht}_score`).val().split("-").map(Number);
             const inputScoreDiff = homeScore - awayScore;
-            this.processTables("forecast_ah", tables, (row, cells) => {
+            this.processTables(ftht, type, tables, (row, cells) => {
                 let {
                     Score,
                     Handicap,
@@ -257,9 +298,9 @@
                 return forecast;
             });
         },
-        renderCorrectScore(tables) {
-            const inputScore = $("#forecast_score").val().trim();
-            this.processTables("forecast_cs", tables, (row, cells) => {
+        renderCorrectScore(ftht, type, tables) {
+            const inputScore = $(`#forecast_${ftht}_score`).val().trim();
+            this.processTables(ftht, type, tables, (row, cells) => {
                 let {
                     Score,
                     Stake,
@@ -283,10 +324,10 @@
                 return forecast;
             });
         },
-        renderBothTeamsToScore(tables) {
-            const [homeScore, awayScore] = $("#forecast_score").val().split("-").map(Number);
+        renderBothTeamsToScore(ftht, type, tables) {
+            const [homeScore, awayScore] = $(`#forecast_${ftht}_score`).val().split("-").map(Number);
             const isBothTeamsToScore = homeScore > 0 && awayScore > 0;
-            this.processTables("forecast_bts", tables, (row, cells) => {
+            this.processTables(ftht, type, tables, (row, cells) => {
                 let {
                     Selection,
                     "Void Stake": VoidStake,
@@ -310,12 +351,12 @@
                 return forecast;
             });
         },
-        renderTeamGoalsOverUnder(tables) {
-            const [homeScore, awayScore] = $("#forecast_score").val().split("-").map(Number);
+        renderTeamGoalsOverUnder(ftht, type, tables) {
+            const [homeScore, awayScore] = $(`#forecast_${ftht}_score`).val().split("-").map(Number);
             let lastHandicap = 0;
-            this.processTables("forecast_tgou", tables, (row, cells) => {
+            this.processTables(ftht, type, tables, (row, cells) => {
                 let {
-                    Handicap,
+                    Goals,
                     Team,
                     "Over Stake": OverStake,
                     "Over Void Stake": OverVoidStake,
@@ -329,18 +370,18 @@
                 } = cells;
                 OverStake = utils.parseAmount(OverStake) - utils.parseAmount(OverVoidStake || 0) - utils.parseAmount(OverCashOutStake || 0);
                 UnderStake = utils.parseAmount(UnderStake) - utils.parseAmount(UnderVoidStake || 0) - utils.parseAmount(UnderCashOutStake || 0);
-                Handicap = utils.parseAmount(Handicap === "Over Above" ? lastHandicap : Handicap);
+                Goals = utils.parseAmount(Goals === "Over Above" ? lastHandicap : Goals);
                 CashOutWinLoss = utils.parseAmount(CashOutWinLoss);
-                lastHandicap = Handicap + 0.25;
+                lastHandicap = Goals + 0.25;
                 const overLiability = (utils.parseAmount(OverLiability) - utils.parseAmount(UnderStake)) * -1;
                 const underLiability = (utils.parseAmount(UnderLiability) - utils.parseAmount(OverStake)) * -1;
 
                 let forecast = 0;
                 const goals = Team === "Home" ? homeScore : awayScore;
-                if (goals === Handicap + 0.25) forecast = overLiability / 2;
-                else if (goals === Handicap - 0.25) forecast = underLiability / 2;
-                else if (goals > Handicap) forecast = overLiability;
-                else if (goals < Handicap) forecast = underLiability;
+                if (goals === Goals + 0.25) forecast = overLiability / 2;
+                else if (goals === Goals - 0.25) forecast = underLiability / 2;
+                else if (goals > Goals) forecast = overLiability;
+                else if (goals < Goals) forecast = underLiability;
                 else {
                     row.css("background-color", "rgb(255, 255, 200)");
                     forecast = 0;
@@ -351,13 +392,13 @@
                 return forecast;
             });
         },
-        renderCornersOverUnder(tables) {
-            const [homeCornersScore, awayCornersScore] = $("#forecast_corners_score").val().split("-").map(Number);
+        renderCornersOverUnder(ftht, type, tables) {
+            const [homeCornersScore, awayCornersScore] = $(`#forecast_${ftht}_corners_score`).val().split("-").map(Number);
             const inputCorners = homeCornersScore + awayCornersScore;
             let lastHandicap = 0;
-            this.processTables("forecast_cornersou", tables, (row, cells) => {
+            this.processTables(ftht, type, tables, (row, cells) => {
                 let {
-                    Handicap,
+                    Goals,
                     "Over Stake": OverStake,
                     "Over Void Stake": OverVoidStake,
                     "Over CashOut Stake": OverCashOutStake,
@@ -370,17 +411,17 @@
                 } = cells;
                 OverStake = utils.parseAmount(OverStake) - utils.parseAmount(OverVoidStake || 0) - utils.parseAmount(OverCashOutStake || 0);
                 UnderStake = utils.parseAmount(UnderStake) - utils.parseAmount(UnderVoidStake || 0) - utils.parseAmount(UnderCashOutStake || 0);
-                Handicap = utils.parseAmount(Handicap === "Over Above" ? lastHandicap : Handicap);
+                Goals = utils.parseAmount(Goals === "Over Above" ? lastHandicap : Goals);
                 CashOutWinLoss = utils.parseAmount(CashOutWinLoss);
-                lastHandicap = Handicap + 0.25;
+                lastHandicap = Goals + 0.25;
                 const overLiability = (utils.parseAmount(OverLiability) - utils.parseAmount(UnderStake)) * -1;
                 const underLiability = (utils.parseAmount(UnderLiability) - utils.parseAmount(OverStake)) * -1;
 
                 let forecast = 0;
-                if (inputCorners === Handicap + 0.25) forecast = overLiability / 2;
-                else if (inputCorners === Handicap - 0.25) forecast = underLiability / 2;
-                else if (inputCorners > Handicap) forecast = overLiability;
-                else if (inputCorners < Handicap) forecast = underLiability;
+                if (inputCorners === Goals + 0.25) forecast = overLiability / 2;
+                else if (inputCorners === Goals - 0.25) forecast = underLiability / 2;
+                else if (inputCorners > Goals) forecast = overLiability;
+                else if (inputCorners < Goals) forecast = underLiability;
                 else {
                     row.css("background-color", "rgb(255, 255, 200)");
                     forecast = 0;
@@ -391,10 +432,10 @@
                 return forecast;
             });
         },
-        renderCornersAsianHandicap(tables) {
-            const [homeCornersScore, awayCornersScore] = $("#forecast_corners_score").val().split("-").map(Number);
+        renderCornersAsianHandicap(ftht, type, tables) {
+            const [homeCornersScore, awayCornersScore] = $(`#forecast_${ftht}_corners_score`).val().split("-").map(Number);
             const inputScoreDiff = homeCornersScore - awayCornersScore;
-            this.processTables("forecast_cornersah", tables, (row, cells) => {
+            this.processTables(ftht, type, tables, (row, cells) => {
                 let {
                     "Corners Score": Score,
                     Handicap,
@@ -433,7 +474,7 @@
                 return forecast;
             });
         },
-        processTables(type, tables, processRow) {
+        processTables(ftht, type, tables, processRow) {
             tables.each((_, tab) => {
                 const table = $(tab);
                 let totalForecast = 0;
@@ -461,15 +502,15 @@
                     if ($(td).text().trim() === "0.00") $(td).find("div").text("0");
                 });
                 table.find("tfoot th:last").text(utils.toAmountStr(totalForecast));
-                utils.colorWinLoss($(`#${type}_total`).text(utils.toAmountStr(totalForecast)));
+                utils.colorWinLoss($(`#forecast_${ftht}_${type}_total`).text(utils.toAmountStr(totalForecast)));
 
                 // Hide void and cashout columns
                 [
-                    "Void Stake", "CashOut Stake",
-                    "Over Stake", "Over Void Stake", "Over CashOut Stake",
-                    "Under Stake", "Under Void Stake", "Under CashOut Stake",
-                    "Home Stake", "Home Void Stake", "Home CashOut Stake",
-                    "Away Stake", "Away Void Stake", "Away CashOut Stake",
+                    "Void Stake", "CashOut Stake", "Liability", "CashOut WinLoss",
+                    "Over Stake", "Over Void Stake", "Over CashOut Stake", "Over Liability",
+                    "Under Stake", "Under Void Stake", "Under CashOut Stake", "Under Liability",
+                    "Home Stake", "Home Void Stake", "Home CashOut Stake", "Home Liability",
+                    "Away Stake", "Away Void Stake", "Away CashOut Stake", "Away Liability"
                 ].forEach(name => {
                     const colNum = headers.indexOf(name) + 1;
                     if (colNum == 0) return;
