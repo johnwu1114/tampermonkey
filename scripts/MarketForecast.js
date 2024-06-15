@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Market Forecast
 // @namespace    http://tampermonkey.net/
-// @version      1.3
+// @version      1.4
 // @description  Forecast the markets based on the score inputted and the table data in the dashboard.
 // @author       John Wu
 // @match        http://*.252:5601/*
@@ -13,7 +13,7 @@
 (function () {
     "use strict";
     const $ = window.jQuery;
-    const version = "1.3";
+    const version = "1.4";
 
     const utils = {
         colorWinLoss(target) {
@@ -40,8 +40,10 @@
             "forecast_cornersou",
             "forecast_cornersah"
         ],
+        summaryCount: 0,
         isRendered: {},
         registeredTime: 0,
+        delayTime: 1000,
         start() {
             const observer = new MutationObserver(this.observeMutations.bind(this));
             observer.observe(document.body, { childList: true, subtree: true });
@@ -95,21 +97,27 @@
             }
 
             markdownBody.find("blockquote").find("h1").remove();
+            this.summaryCount = $(this.targets.map(type => `#${type}_total`).join(",")).length
         },
         setupTable() {
-            if (Date.now() - this.registeredTime < 1000 || $(this.targets.map(type => `[data-type="${type}"]`).join(",")).length === this.targets.length) return;
+            if (Date.now() - this.registeredTime < this.delayTime) return;
+
+            const existTables = $(this.targets.map(type => `[data-type="${type}"]`).join(",")).length;
+            const noResultsCount = $("[ng-controller='EnhancedTableVisController'] .euiText").filter((x, y) => $(y).text().trim() === "No results found").length;
+            if ((existTables + noResultsCount) >= this.summaryCount) return;
+
             this.registeredTime = Date.now();
 
             console.log("Setting up forecast tables...");
             setTimeout(() => {
                 this.targets.forEach(target => {
-                    $(`table.table-condensed`)
+                    $("enhanced-paginated-table")
                         .filter((_, table) => $(table).html().includes(`{{${target}}}`))
                         .attr("data-type", target);
                 });
                 this.renderByScore();
                 this.renderByCornersScore();
-            }, 1000);
+            }, this.delayTime);
         },
         renderByScore() {
             console.log("Rendering forecast by score...");
