@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Market Forecast
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.2
 // @description  Forecast the markets based on the score inputted and the table data in the dashboard.
 // @author       John Wu
 // @match        http://*.252:5601/*
@@ -13,7 +13,7 @@
 (function () {
     "use strict";
     const $ = window.jQuery;
-    const version = "1.1";
+    const version = "1.2";
 
     const utils = {
         colorWinLoss(target) {
@@ -36,7 +36,8 @@
             "forecast_ah",
             "forecast_cs",
             "forecast_bts",
-            "forecast_tgou"
+            "forecast_tgou",
+            "forecast_cornersou"
         ],
         isRendered: {},
         registeredTime: 0,
@@ -66,11 +67,13 @@
             console.log("Setting up markdown...");
             let html = markdownBody.html();
             this.targets.concat(["forecast"]).forEach(target => {
-                html = html.replace(`{{${target}_totalForecast}}`, `<div id="${target}_totalForecast" />`);
+                html = html.replace(`{{${target}_total}}`, `<div id="${target}_total" />`);
             });
             html = html.replace("{{forecast_score}}", "<input id='forecast_score' type='text' class='euiFieldText euiFieldText--fullWidth'>");
+            html = html.replace("{{forecast_corners_score}}", "<input id='forecast_corners_score' type='text' class='euiFieldText euiFieldText--fullWidth'>");
             markdownBody.html(html);
-            $("#forecast_score").on("change", this.render.bind(this)).val("0-0");
+            $("#forecast_score").on("change", this.renderByScore.bind(this)).val("0-0");
+            $("#forecast_corners_score").on("change", this.renderByCornersScore.bind(this)).val("0-0");
 
             let supportVersion = "0";
             markdownBody.find("code").each((_, code) => {
@@ -84,8 +87,6 @@
             console.log("Support version:", supportVersion, "Current version:", version);
             if (version >= supportVersion) {
                 markdownBody.find("blockquote").find("h2").remove();
-                // Temporarily remove h2 tags
-                markdownBody.find("h2").remove();
             }
 
             markdownBody.find("blockquote").find("h1").remove();
@@ -101,11 +102,12 @@
                         .filter((_, table) => $(table).html().includes(`{{${target}}}`))
                         .attr("data-type", target);
                 });
-                this.render();
+                this.renderByScore();
+                this.renderByCornersScore();
             }, 1000);
         },
-        render() {
-            console.log("Rendering forecast...");
+        renderByScore() {
+            console.log("Rendering forecast by score...");
             this.isRendered = {};
             this.renderTable("forecast_1x2", this.render1x2.bind(this));
             this.renderTable("forecast_ou", this.renderOverUnder.bind(this));
@@ -114,11 +116,19 @@
             this.renderTable("forecast_bts", this.renderBothTeamsToScore.bind(this));
             this.renderTable("forecast_tgou", this.renderTeamGoalsOverUnder.bind(this));
 
-            const totalForecast = this.targets.reduce((total, target) => total + (utils.parseAmount($(`#${target}_totalForecast`).text()) || 0), 0);
-            utils.colorWinLoss($("#forecast_totalForecast").text(utils.toAmountStr(totalForecast)));
+            const totalForecast = this.targets.reduce((total, target) => total + (utils.parseAmount($(`#${target}_total`).text()) || 0), 0);
+            utils.colorWinLoss($("#forecast_total").text(utils.toAmountStr(totalForecast)));
+        },
+        renderByCornersScore() {
+            console.log("Rendering forecast by corners score...");
+            this.isRendered = {};
+            this.renderTable("forecast_cornersou", this.renderCornersOverUnder.bind(this));
+
+            const totalForecast = this.targets.reduce((total, target) => total + (utils.parseAmount($(`#${target}_total`).text()) || 0), 0);
+            utils.colorWinLoss($("#forecast_total").text(utils.toAmountStr(totalForecast)));
         },
         renderTable(type, renderFunction) {
-            utils.colorWinLoss($(`#${type}_totalForecast`).text("0"));
+            utils.colorWinLoss($(`#${type}_total`).text("0"));
             const tables = $(`[data-type="${type}"]`);
             if (this.isRendered[type] || !tables.length) return;
             this.isRendered[type] = true;
@@ -326,6 +336,46 @@
                 return forecast;
             });
         },
+        renderCornersOverUnder(tables) {
+            const [homeCornersScore, awayCornersScore] = $("#forecast_corners_score").val().split("-").map(Number);
+            const inputCorners = homeCornersScore + awayCornersScore;
+            let lastHandicap = 0;
+            this.processTables("forecast_cornersou", tables, (row, cells) => {
+                let {
+                    Handicap,
+                    "Over Stake": OverStake,
+                    "Over Void Stake": OverVoidStake,
+                    "Over CashOut Stake": OverCashOutStake,
+                    "Over Liability": OverLiability,
+                    "Under Stake": UnderStake,
+                    "Under Void Stake": UnderVoidStake,
+                    "Under CashOut Stake": UnderCashOutStake,
+                    "Under Liability": UnderLiability,
+                    "CashOut WinLoss": CashOutWinLoss
+                } = cells;
+                OverStake = utils.parseAmount(OverStake) - utils.parseAmount(OverVoidStake || 0) - utils.parseAmount(OverCashOutStake || 0);
+                UnderStake = utils.parseAmount(UnderStake) - utils.parseAmount(UnderVoidStake || 0) - utils.parseAmount(UnderCashOutStake || 0);
+                Handicap = utils.parseAmount(Handicap === "Over Above" ? lastHandicap : Handicap);
+                CashOutWinLoss = utils.parseAmount(CashOutWinLoss);
+                lastHandicap = Handicap + 0.25;
+                const overLiability = (utils.parseAmount(OverLiability) - utils.parseAmount(UnderStake)) * -1;
+                const underLiability = (utils.parseAmount(UnderLiability) - utils.parseAmount(OverStake)) * -1;
+
+                let forecast = 0;
+                if (inputCorners === Handicap + 0.25) forecast = overLiability / 2;
+                else if (inputCorners === Handicap - 0.25) forecast = underLiability / 2;
+                else if (inputCorners > Handicap) forecast = overLiability;
+                else if (inputCorners < Handicap) forecast = underLiability;
+                else {
+                    row.css("background-color", "rgb(255, 255, 200)");
+                    forecast = 0;
+                }
+
+                forecast += CashOutWinLoss;
+                utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
+                return forecast;
+            });
+        },
         processTables(type, tables, processRow) {
             tables.each((_, tab) => {
                 const table = $(tab);
@@ -354,7 +404,7 @@
                     if ($(td).text().trim() === "0.00") $(td).find("div").text("0");
                 });
                 table.find("tfoot th:last").text(utils.toAmountStr(totalForecast));
-                utils.colorWinLoss($(`#${type}_totalForecast`).text(utils.toAmountStr(totalForecast)));
+                utils.colorWinLoss($(`#${type}_total`).text(utils.toAmountStr(totalForecast)));
 
                 // Hide void and cashout columns
                 [
