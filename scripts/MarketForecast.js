@@ -37,7 +37,8 @@
             "forecast_cs",
             "forecast_bts",
             "forecast_tgou",
-            "forecast_cornersou"
+            "forecast_cornersou",
+            "forecast_cornersah"
         ],
         isRendered: {},
         registeredTime: 0,
@@ -123,6 +124,7 @@
             console.log("Rendering forecast by corners score...");
             this.isRendered = {};
             this.renderTable("forecast_cornersou", this.renderCornersOverUnder.bind(this));
+            this.renderTable("forecast_cornersah", this.renderCornersAsianHandicap.bind(this));
 
             const totalForecast = this.targets.reduce((total, target) => total + (utils.parseAmount($(`#${target}_total`).text()) || 0), 0);
             utils.colorWinLoss($("#forecast_total").text(utils.toAmountStr(totalForecast)));
@@ -223,12 +225,13 @@
                 HomeLiability = utils.parseAmount(HomeLiability);
                 AwayLiability = utils.parseAmount(AwayLiability);
                 CashOutWinLoss = utils.parseAmount(CashOutWinLoss);
-                const scoreDiff = Score.indexOf("-") === -1 ? 0 : Score.split("-").map(Number).reduce((a, b) => a - b, 0);
+                const scoreDiff = Math.abs(Score.indexOf("-") === -1 ? 0 : Score.split("-").map(Number).reduce((a, b) => a - b, 0));
                 if (Handicap === "Over Above") {
                     row.find("td:last").text("Error!!");
                     return;
                 }
 
+                Handicap = utils.parseAmount(Handicap);
                 let originalHandicap = Handicap - scoreDiff;
                 let outcome = inputScoreDiff + originalHandicap;
                 let forecast = this.calculateAsianHandicap(outcome, HomeStake, HomeLiability);
@@ -370,6 +373,48 @@
                     row.css("background-color", "rgb(255, 255, 200)");
                     forecast = 0;
                 }
+
+                forecast += CashOutWinLoss;
+                utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
+                return forecast;
+            });
+        },
+        renderCornersAsianHandicap(tables) {
+            const [homeCornersScore, awayCornersScore] = $("#forecast_corners_score").val().split("-").map(Number);
+            const inputScoreDiff = homeCornersScore - awayCornersScore;
+            this.processTables("forecast_cornersah", tables, (row, cells) => {
+                let {
+                    "Corners Score": Score,
+                    Handicap,
+                    "Home Stake": HomeStake,
+                    "Home Void Stake": HomeVoidStake,
+                    "Home CashOut Stake": HomeCashOutStake,
+                    "Away Stake": AwayStake,
+                    "Away Void Stake": AwayVoidStake,
+                    "Away CashOut Stake": AwayCashOutStake,
+                    "Home Liability": HomeLiability,
+                    "Away Liability": AwayLiability,
+                    "CashOut WinLoss": CashOutWinLoss
+                } = cells;
+                HomeStake = utils.parseAmount(HomeStake) - utils.parseAmount(HomeVoidStake || 0) - utils.parseAmount(HomeCashOutStake || 0);
+                AwayStake = utils.parseAmount(AwayStake) - utils.parseAmount(AwayVoidStake || 0) - utils.parseAmount(AwayCashOutStake || 0);
+                HomeLiability = utils.parseAmount(HomeLiability);
+                AwayLiability = utils.parseAmount(AwayLiability);
+                CashOutWinLoss = utils.parseAmount(CashOutWinLoss);
+                const scoreDiff = Math.abs(Score.indexOf("-") === -1 ? 0 : Score.split("-").map(Number).reduce((a, b) => a - b, 0));
+                if (Handicap === "Over Above") {
+                    row.find("td:last").text("Error!!");
+                    return;
+                }
+
+                Handicap = utils.parseAmount(Handicap);
+                let originalHandicap = Handicap - scoreDiff;
+                let outcome = inputScoreDiff + originalHandicap;
+                let forecast = this.calculateAsianHandicap(outcome, HomeStake, HomeLiability);
+
+                originalHandicap = Handicap - scoreDiff * -1;
+                outcome = inputScoreDiff * -1 + originalHandicap;
+                forecast += this.calculateAsianHandicap(outcome, AwayStake, AwayLiability);
 
                 forecast += CashOutWinLoss;
                 utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
