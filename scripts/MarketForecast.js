@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Market Forecast
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.3
 // @description  Forecast the markets based on the score inputted and the table data in the dashboard.
 // @author       John Wu
 // @match        http://*.252:5601/*
@@ -13,7 +13,7 @@
 (function () {
     "use strict";
     const $ = window.jQuery;
-    const version = "1.2";
+    const version = "1.3";
 
     const utils = {
         colorWinLoss(target) {
@@ -70,11 +70,15 @@
             this.targets.concat(["forecast"]).forEach(target => {
                 html = html.replace(`{{${target}_total}}`, `<div id="${target}_total" />`);
             });
-            html = html.replace("{{forecast_score}}", "<input id='forecast_score' type='text' class='euiFieldText euiFieldText--fullWidth'>");
-            html = html.replace("{{forecast_corners_score}}", "<input id='forecast_corners_score' type='text' class='euiFieldText euiFieldText--fullWidth'>");
+            html = html.replace("{{forecast_score}}", "<div><label>Score</label> <input id='forecast_score' type='text' class='euiFieldText'></div>");
+            html = html.replace("{{forecast_corners_score}}", "<div><label>Corner Score</label> <input id='forecast_corners_score' type='text' class='euiFieldText'></div>");
             markdownBody.html(html);
             $("#forecast_score").on("change", this.renderByScore.bind(this)).val("0-0");
             $("#forecast_corners_score").on("change", this.renderByCornersScore.bind(this)).val("0-0");
+            $("#forecast_score,#forecast_corners_score").parent()
+                .css("float", "left")
+                .css("width", "50%")
+                .css("padding", "5px");
 
             let supportVersion = "0";
             markdownBody.find("code").each((_, code) => {
@@ -93,7 +97,7 @@
             markdownBody.find("blockquote").find("h1").remove();
         },
         setupTable() {
-            if (Date.now() - this.registeredTime < 1000 || $(this.targets.map(type => `[data-type="${type}"]`).join(",")).length !== 0) return;
+            if (Date.now() - this.registeredTime < 1000 || $(this.targets.map(type => `[data-type="${type}"]`).join(",")).length === this.targets.length) return;
             this.registeredTime = Date.now();
 
             console.log("Setting up forecast tables...");
