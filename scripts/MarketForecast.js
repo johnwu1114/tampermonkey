@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Market Forecast
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.6
 // @description  Forecast the markets based on the score inputted and the table data in the dashboard.
 // @author       John Wu
 // @match        http://*.252:5601/*
@@ -13,7 +13,7 @@
 (function () {
     "use strict";
     const $ = window.jQuery;
-    const version = "1.5";
+    const version = "1.6";
 
     const utils = {
         colorWinLoss(target) {
@@ -39,6 +39,7 @@
             "forecast_ft_tgou",
             "forecast_ft_corners_ou",
             "forecast_ft_corners_ah",
+            "forecast_ft_htft",
             "forecast_ht_1x2",
             "forecast_ht_ou",
             "forecast_ht_ah",
@@ -46,7 +47,7 @@
             "forecast_ht_bts",
             "forecast_ht_tgou",
             "forecast_ht_corners_ou",
-            "forecast_ht_corners_ah"
+            "forecast_ht_corners_ah",
         ],
         summaryCount: 0,
         isRendered: {},
@@ -154,6 +155,7 @@
             this.renderTable("ft", "cs", this.renderCorrectScore.bind(this));
             this.renderTable("ft", "bts", this.renderBothTeamsToScore.bind(this));
             this.renderTable("ft", "tgou", this.renderTeamGoalsOverUnder.bind(this));
+            this.renderTable("ft", "htft", this.renderHalftTimeFullTime.bind(this));
             this.renderTotalForecast();
         },
         renderByFullTimeCorners() {
@@ -172,6 +174,7 @@
             this.renderTable("ht", "cs", this.renderCorrectScore.bind(this));
             this.renderTable("ht", "bts", this.renderBothTeamsToScore.bind(this));
             this.renderTable("ht", "tgou", this.renderTeamGoalsOverUnder.bind(this));
+            this.renderTable("ft", "htft", this.renderHalftTimeFullTime.bind(this));
             this.renderTotalForecast();
         },
         renderByHalfTimeCorners() {
@@ -469,6 +472,37 @@
                 outcome = inputScoreDiff * -1 + originalHandicap;
                 forecast += this.calculateAsianHandicap(outcome, AwayStake, AwayLiability);
 
+                forecast += CashOutWinLoss;
+                utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
+                return forecast;
+            });
+        },
+        renderHalftTimeFullTime(ftht, type, tables) {
+            const [ftHomeScore, ftAwayScore] = $(`#forecast_ft_score`).val().split("-").map(Number);
+            const [htHomeScore, htAwayScore] = $(`#forecast_ht_score`).val().split("-").map(Number);
+            const ftWinner = ftHomeScore === ftAwayScore ? "Draw" : ftHomeScore > ftAwayScore ? "Home" : "Away";
+            const htWinner = htHomeScore === htAwayScore ? "Draw" : htHomeScore > htAwayScore ? "Home" : "Away";   
+            const inputHtft = `${htWinner}/${ftWinner}`;
+
+            this.processTables(ftht, type, tables, (row, cells) => {
+                let {
+                    Selection,
+                    Stake,
+                    "Void Stake": VoidStake,
+                    "CashOut Stake": CashOutStake,
+                    Liability,
+                    "CashOut WinLoss": CashOutWinLoss
+                } = cells;
+                Stake = utils.parseAmount(Stake) - utils.parseAmount(VoidStake || 0) - utils.parseAmount(CashOutStake || 0);
+                Liability = utils.parseAmount(Liability);
+                CashOutWinLoss = utils.parseAmount(CashOutWinLoss);
+                
+
+                let forecast = Stake;
+                if (inputHtft === Selection) {
+                    forecast = Liability * -1;
+                    row.css("background-color", "rgb(255, 255, 200)");
+                }
                 forecast += CashOutWinLoss;
                 utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
                 return forecast;
