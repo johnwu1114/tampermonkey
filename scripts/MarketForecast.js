@@ -291,7 +291,7 @@
                 AwayLiability = utils.parseAmount(AwayLiability);
                 CashOutWinLoss = utils.parseAmount(CashOutWinLoss);
                 Score = Score || CornersScore || "0-0";
-                const scoreDiff = Math.abs(Score.indexOf("-") === -1 ? 0 : Score.split("-").map(Number).reduce((a, b) => a - b, 0));
+                const scoreDiff = Score.indexOf("-") === -1 ? 0 : Score.split("-").map(Number).reduce((a, b) => a - b);
                 if (Handicap === "Over Above") {
                     row.find("td:last").text("Error!!");
                     return;
