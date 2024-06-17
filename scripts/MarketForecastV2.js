@@ -1,58 +1,50 @@
 // ==UserScript==
-// @name         Market Forecast
+// @name         Market Forecast V2
 // @namespace    http://tampermonkey.net/
-// @version      1.7
+// @version      2.0
 // @description  Forecast market results based on the score inputted by the user in Kibana dashboard.
 // @author       John Wu
 // @match        http://*.252:5601/*
 // @match        http://operation.uat.share.com/*
 // @grant        none
 // @require      https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js
+// @require      https://raw.githubusercontent.com/johnwu1114/tampermonkey/feat/scripts/utils.js
 // ==/UserScript==
 
 (function () {
     "use strict";
     const $ = window.jQuery;
-    const version = "1.7";
-
-    const utils = {
-        colorWinLoss(target) {
-            const value = this.parseAmount(target.text());
-            target.css("color", value < 0 ? "#fd2f05" : value > 0 ? "#06b954" : "");
-        },
-        parseAmount(input) {
-            const parsed = parseFloat((input || 0).toString().trim().replace(/,/g, ""));
-            return isNaN(parsed) ? 0 : parsed;
-        },
-        toAmountStr(input) {
-            return input.toFixed(2).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-        }
-    };
+    const scriptName = "MarketForecastV2";
+    const version = "2.0";
 
     const forecast = {
         enabled: false,
         summaryCount: 0,
-        registeredTime: 0,
+        lastUpdateTime: {},
         delayTime: 1000,
-        inputs: ["ft", "ft_corners", "ht", "ht_corners"],
-        strategies: [
-            { market: "ft_1x2", algorithm: "1x2" },
-            { market: "ft_ou", algorithm: "ou" },
-            { market: "ft_ah", algorithm: "ah" },
-            { market: "ft_cs", algorithm: "cs" },
-            { market: "ft_bts", algorithm: "bts" },
-            { market: "ft_tgou", algorithm: "ou" },
-            { market: "ft_corners_ou", algorithm: "ou" },
-            { market: "ft_corners_ah", algorithm: "ah" },
-            { market: "ft_htft", algorithm: "htft" },
-            { market: "ht_1x2", algorithm: "1x2" },
-            { market: "ht_ou", algorithm: "ou" },
-            { market: "ht_ah", algorithm: "ah" },
-            { market: "ht_cs", algorithm: "cs" },
-            { market: "ht_bts", algorithm: "bts" },
-            { market: "ht_tgou", algorithm: "ou" },
-            { market: "ht_corners_ou", algorithm: "ou" },
-            { market: "ht_corners_ah", algorithm: "ah" },
+        scoreRange: 2,
+        templates: [
+            { name: "<strong>Full Time</strong>", pattern: "ft_score", align: "center", isHeader: true },
+            { name: "1 x 2", pattern: "ft_1x2", align: "right", algorithm: "1x2" },
+            { name: "Asian Handicap", pattern: "ft_ah", align: "right", algorithm: "ah" },
+            { name: "Over / Under", pattern: "ft_ou", align: "right", algorithm: "ou" },
+            { name: "Correct Score", pattern: "ft_cs", align: "right", algorithm: "cs" },
+            { name: "Both Teams to Score", pattern: "ft_bts", align: "right", algorithm: "bts" },
+            { name: "Team Goals Over/Under", pattern: "ft_tgou", align: "right", algorithm: "ou" },
+            { name: "Half-time / Full-time", pattern: "ft_htft", align: "right", algorithm: "htft" },
+            { name: "<strong>Full Time Corners</strong>", pattern: "ft_corners_score", align: "center", isHeader: true },
+            { name: "Corners: Asian Handicap", pattern: "ft_corners_ah", align: "right", algorithm: "ah" },
+            { name: "Corners: Over / Under", pattern: "ft_corners_ou", align: "right", algorithm: "ou" },
+            { name: "<strong>Half Time</strong>", pattern: "ht_score", align: "center", isHeader: true },
+            { name: "1 x 2", pattern: "ht_1x2", align: "right", algorithm: "1x2" },
+            { name: "Asian Handicap", pattern: "ht_ah", align: "right", algorithm: "ah" },
+            { name: "Over / Under", pattern: "ht_ou", align: "right", algorithm: "ou" },
+            { name: "Correct Score", pattern: "ht_cs", align: "right", algorithm: "cs" },
+            { name: "Both Teams to Score", pattern: "ht_bts", align: "right", algorithm: "bts" },
+            { name: "Team Goals Over/Under", pattern: "ht_tgou", align: "right", algorithm: "ou" },
+            { name: "<strong>Half Time Corners</strong>", pattern: "ht_corners_score", align: "center", isHeader: true },
+            { name: "Corners: Asian Handicap", pattern: "ht_corners_ah", align: "right", algorithm: "ah" },
+            { name: "Corners: Over / Under", pattern: "ht_corners_ou", align: "right", algorithm: "ou" },
         ],
         start() {
             const observer = new MutationObserver(this.observeMutations.bind(this));
@@ -69,92 +61,118 @@
                         }
                     });
                 } else {
+                    this.updateScore();
                     this.setupTable();
                 }
             });
         },
         checkVersion() {
-            let supportVersion = "0";
-            const markdownBody = $("div.kbnMarkdown__body");
-            markdownBody.find("blockquote h1").remove();
-            markdownBody.find("blockquote h2").remove(); // Temporarily remove the update script message
-            markdownBody.find("code").each((_, code) => {
-                const text = $(code).text().trim();
-                if (text.indexOf("version") === -1) return;
-                $(code).remove();
-                supportVersion = text.replace("version:", "").trim();
-            });
-            if (version >= supportVersion) return;
-
-            markdownBody.find("blockquote").append(
-                "<h2 style='background-color:yellow'>Update Script</h2>" +
-                "Follow the <a target='_blank' href='https://github.com/johnwu1114/tampermonkey?tab=readme-ov-file#update-script'>document</a> to perform the update."
-            );
-        },
-        setupMarkdown() {
             const markdownBody = $("div.kbnMarkdown__body");
             if (!markdownBody.length) {
                 this.enabled = false;
-                return;
+                return false;
             }
 
-            this.checkVersion();
+            markdownBody.find("blockquote h1").remove();
+            markdownBody.find("code").each((_, code) => {
+                const text = $(code).text().trim();
+                if (text.indexOf("version") !== -1 && text.replace("version:", "").trim() >= version) {
+                    markdownBody.find("blockquote").append(
+                        "<h2 style='background-color:yellow'>Update Script</h2>" +
+                        "Follow the <a target='_blank' href='https://github.com/johnwu1114/tampermonkey?tab=readme-ov-file#update-script'>document</a> to perform the update."
+                    );
+                }
+                if (text.replace("script:", "").trim() === scriptName) {
+                    this.enabled = true;
+                }
+                $(code).remove();
+            });
+
+            return this.enabled;
+        },
+        setupMarkdown() {
+            if (!this.checkVersion()) return;
 
             // Setup markdown
             console.log("Setting up markdown...");
-            let html = markdownBody.html();
-            this.inputs.forEach(inputName => {
-                html = html.replace(`{{forecast_${inputName}_score}}`, `<input id='forecast_${inputName}_score' type='text' class='euiFieldText' />`);
-            });
-            this.strategies.forEach(strategy => {
-                html = html.replace(`{{forecast_${strategy.market}_total}}`, `<span id="forecast_${strategy.market}_total" />`);
-            });
-            html = html
-                .replace(`{{forecast_ft_total}}`, `<span id="forecast_ft_total" />`)
-                .replace(`{{forecast_ht_total}}`, `<span id="forecast_ht_total" />`)
-                .replace(`{{forecast_total}}`, `<span id="forecast_total" />`);
-            markdownBody.html(html);
+            const markdownBody = $("div.kbnMarkdown__body");
+            markdownBody.append("<table id='forecast_table'/>");
+            const table = $("#forecast_table");
+            table.append(`<tr><th colspan=${this.scoreRange * 2 + 2}>Forecast</th></tr>`);
 
-            this.inputs.forEach(inputName => {
-                $(`#forecast_${inputName}_score`).on("change", this[`render_${inputName}`].bind(this)).val("0-0");
+            this.templates.forEach(item => {
+                const { name, pattern, align, isHeader } = item;
+                const row = $("<tr/>");
+                if (isHeader) row.css("border-top", "solid").css("background-color", "#eee");
+                row.append(`<td>${name}</td>`);
+                for (let i = -this.scoreRange; i <= this.scoreRange; i++)
+                    row.append(`<td style="text-align:${align};${(i == 0 && !isHeader) ? "background-color:#ffc" : ""}"><span id='forecast_${pattern}_${i}'>Loading...</span></td>`);
+
+                table.append(row);
             });
 
-            this.summaryCount = $(this.strategies.map(strategy => `#forecast_${strategy.market}_total`).join(",")).length;
+            markdownBody.append(table);
+        },
+        updateScore() {
+            if (!this.enabled) return;
+            if (Date.now() - this.lastUpdateTime["updateScore"] < this.delayTime) return;
+            this.lastUpdateTime["updateScore"] = Date.now();
 
-            this.enabled = true;
+            let matchName = "";
+            let isScoreChanged = false;
+            $(".euiFormControlLayout").each((_, elem) => {
+                if ($(elem).find("label").text().trim() !== "Match") return;
+                matchName = $(elem).find(".euiButtonContent [data-text]").attr("data-text");
+            });
+            $(".euiPanel").each((_, elem) => {
+                if ($(elem).find(".embPanel__titleInner").text().trim() !== "Score Results") return;
+
+                $(elem).find("tr").each((_, row) => {
+                    if (!$(row).find("td:first").text().includes(matchName)) return;
+                    const [ftScore, htScore, ftCornerScore, htCornerScore] = $(row).find("td").map((_, x) => $(x).text()).slice(1);
+
+                    for (let i = -this.scoreRange; i <= this.scoreRange; i++) {
+                        this.setScore("forecast_ft_score", ftScore, i) && (isScoreChanged = true);
+                        this.setScore("forecast_ht_score", htScore, i) && (isScoreChanged = true);
+                        this.setScore("forecast_ft_corners_score", ftCornerScore, i) && (isScoreChanged = true);
+                        this.setScore("forecast_ht_corners_score", htCornerScore, i) && (isScoreChanged = true);
+                    }
+                });
+            });
+            console.log("Score updated...", isScoreChanged);
+        },
+        setScore(key, score, diff) {
+            let [homeScore, awayScore] = score.split("-").map(Number);
+            if (diff < 0) homeScore += Math.abs(diff);
+            else if (diff > 0) awayScore += diff;
+
+            const newScore = `${homeScore}-${awayScore}`;
+            const isScoreChanged = $(`#${key}_${diff}`).text() !== newScore;
+            $(`#${key}_${diff}`).text(newScore);
+
+            return isScoreChanged;
         },
         setupTable() {
             if (!this.enabled) return;
-            if (Date.now() - this.registeredTime < this.delayTime) return;
+            if (Date.now() - this.lastUpdateTime["setupTable"] < this.delayTime) return;
 
-            const existCount = $(this.strategies.map(strategy => `[data-type="forecast_${strategy.market}"]`).join(",")).length;
-            const noResultsCount = $("[ng-controller='EnhancedTableVisController'] .euiText").filter((_, table) => $(table).text().trim() === "No results found").length;
-            if ((existCount + noResultsCount) >= this.summaryCount) return;
-
-            this.registeredTime = Date.now();
+            // const existCount = $(this.templates.map(template => `[data-type="forecast_${template.pattern}"]`).join(",")).length;
+            // const noResultsCount = $("[ng-controller='EnhancedTableVisController'] .euiText").filter((_, table) => $(table).text().trim() === "No results found").length;
+            // if ((existCount + noResultsCount) >= this.summaryCount) return;
+            this.lastUpdateTime["setupTable"] = Date.now();
 
             console.log("Setting up forecast tables...");
             setTimeout(() => {
-                this.strategies.forEach(strategy => {
-                    const target = `forecast_${strategy.market}`;
+                this.templates.forEach(template => {
+                    if (!template.algorithm) return;
+                    const target = `forecast_${template.pattern}`;
                     $("enhanced-paginated-table")
                         .filter((_, table) => $(table).html().includes(`{{${target}}}`))
                         .attr("data-type", target);
+
+                    this.renderTable(template.pattern, this[`render_${template.algorithm}`].bind(this));
                 });
-                this.inputs.forEach(inputName => this[`render_${inputName}`]());
             }, this.delayTime);
-        },
-        renderTotalForecast() {
-            let fullTimeTotal = 0;
-            let halfTimeTotal = 0;
-            this.strategies.forEach(strategy => {
-                const forecast = utils.parseAmount($(`#forecast_${strategy.market}_total`).text());
-                if (strategy.market.includes("ft_")) fullTimeTotal += forecast;
-                else halfTimeTotal += forecast;
-            });
-            utils.colorWinLoss($("#forecast_ft_total").text(utils.toAmountStr(fullTimeTotal)));
-            utils.colorWinLoss($("#forecast_ht_total").text(utils.toAmountStr(halfTimeTotal)));
-            utils.colorWinLoss($("#forecast_total").text(utils.toAmountStr(fullTimeTotal + halfTimeTotal)));
         },
         renderTable(market, renderFunction) {
             const target = `forecast_${market}`;
@@ -163,42 +181,9 @@
             if (!tables.length) return;
             renderFunction(market, tables);
         },
-        render_ft() {
-            console.log("Rendering forecast by full time score...");
-            this.strategies.filter(strategy => strategy.market.includes("ft_") && !strategy.market.includes("corners_"))
-                .forEach(strategy => {
-                    this.renderTable(strategy.market, this[`render_${strategy.algorithm}`].bind(this));
-                });
-            this.renderTotalForecast();
-        },
-        render_ft_corners() {
-            console.log("Rendering forecast by full time corners...");
-            this.strategies.filter(strategy => strategy.market.includes("ft_") && strategy.market.includes("corners_"))
-                .forEach(strategy => {
-                    this.renderTable(strategy.market, this[`render_${strategy.algorithm}`].bind(this));
-                });
-            this.renderTotalForecast();
-        },
-        render_ht() {
-            console.log("Rendering forecast by half time score...");
-            this.strategies.filter(strategy => strategy.market.includes("ht_") && !strategy.market.includes("corners_"))
-                .forEach(strategy => {
-                    this.renderTable(strategy.market, this[`render_${strategy.algorithm}`].bind(this));
-                });
-            this.renderTable("ft_htft", this.render_htft.bind(this));
-            this.renderTotalForecast();
-        },
-        render_ht_corners() {
-            console.log("Rendering forecast by half time corners...");
-            this.strategies.filter(strategy => strategy.market.includes("ht_") && strategy.market.includes("corners_"))
-                .forEach(strategy => {
-                    this.renderTable(strategy.market, this[`render_${strategy.algorithm}`].bind(this));
-                });
-            this.renderTotalForecast();
-        },
         render_1x2(market, tables) {
             const inputKey = market.replace("_1x2", "");
-            const [homeScore, awayScore] = $(`#forecast_${inputKey}_score`).val().split("-").map(Number);
+            const [homeScore, awayScore] = $(`#forecast_${inputKey}_score_0`).val().split("-").map(Number);
             const winner = homeScore === awayScore ? "Draw" : homeScore > awayScore ? "Home" : "Away";
             this.processTables(market, tables, (row, cells) => {
                 let {
@@ -268,7 +253,7 @@
         },
         render_ah(market, tables) {
             const inputKey = market.replace("_ah", "");
-            const [homeScore, awayScore] = $(`#forecast_${inputKey}_score`).val().split("-").map(Number);
+            const [homeScore, awayScore] = $(`#forecast_${inputKey}_score_0`).val().split("-").map(Number);
             const inputScoreDiff = homeScore - awayScore;
             this.processTables(market, tables, (row, cells) => {
                 let {
