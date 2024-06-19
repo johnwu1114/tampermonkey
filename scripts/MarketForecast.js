@@ -14,10 +14,10 @@
 (function () {
     "use strict";
     const $ = window.jQuery;
-    const scriptName = "MarketForecast";
-    const version = "1.9";
 
     const forecast = {
+        scriptName: "MarketForecast",
+        version: "1.9",
         enabled: false,
         summaryCount: 0,
         delayTime: 1000,
@@ -70,20 +70,29 @@
                 return false;
             }
 
-            markdownBody.find("blockquote").remove();
+            let mdScriptName = "";
+            let mdVersion = "";
             markdownBody.find("code").each((_, code) => {
                 const text = $(code).text().trim();
-                if (text.indexOf("version") !== -1 && text.replace("version:", "").trim() > version) {
-                    markdownBody.append(
-                        `<h2 style='background-color:yellow'>Update the ${scriptName} script to ${text} or above.</h2>` +
-                        "Follow the <a target='_blank' href='https://github.com/johnwu1114/tampermonkey?tab=readme-ov-file#update-script'>document</a> to perform the update."
-                    );
+                if (text.indexOf("version") !== -1) {
+                    mdVersion = text.replace("version:", "").trim();
+                } else if (text.replace("script:", "").trim() === this.scriptName) {
+                    mdScriptName = this.scriptName
                 }
-                if (text.replace("script:", "").trim() === scriptName) {
-                    this.enabled = true;
-                }
-                $(code).remove();
             });
+
+            this.enabled = mdScriptName == this.scriptName;
+            if (this.enabled && mdVersion > this.version) {
+                markdownBody.append(
+                    `<h2 style='background-color:yellow'>Update the ${this.scriptName} script to ${text} or above.</h2>` +
+                    "Follow the <a target='_blank' href='https://github.com/johnwu1114/tampermonkey?tab=readme-ov-file#update-script'>document</a> to perform the update."
+                );
+            }
+
+            if (this.enabled) {
+                markdownBody.find("blockquote").remove();
+                markdownBody.find("code").remove();
+            }
 
             return this.enabled;
         },
