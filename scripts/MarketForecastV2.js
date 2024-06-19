@@ -8,6 +8,7 @@
 // @match        http://operation.uat.share.com/*
 // @grant        none
 // @require      https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js
+// @require      https://raw.githubusercontent.com/johnwu1114/tampermonkey/main/scripts/common.js
 // @require      https://raw.githubusercontent.com/johnwu1114/tampermonkey/main/scripts/utils.js
 // ==/UserScript==
 
@@ -61,10 +62,11 @@
                 if (mutation.addedNodes.length) {
                     $(mutation.addedNodes).each((_, addedNode) => {
                         if ($(addedNode).is("div.kbnMarkdown__body") || $(addedNode).find("div.kbnMarkdown__body").length) {
-                            this.setupMarkdown();
+                            this.enabled = common.checkVersion(this.scriptName, this.version);
+                            if (this.enabled) this.setupMarkdown();
                         }
                     });
-                } else if (mutation.target.tagName === "TBODY") {
+                } else if (this.enabled && mutation.target.tagName === "TBODY") {
                     clearTimeout(this.processing);
                     this.processing = setTimeout(() => {
                         this.updateScore();
@@ -73,43 +75,7 @@
                 }
             });
         },
-        checkVersion() {
-            const markdownBody = $("div.kbnMarkdown__body");
-            if (!markdownBody.length) {
-                this.enabled = false;
-                return false;
-            }
-
-            let mdScriptName = "";
-            let mdVersion = "";
-            markdownBody.find("code").each((_, code) => {
-                const text = $(code).text().trim();
-                if (text.indexOf("version") !== -1) {
-                    mdVersion = text.replace("version:", "").trim();
-                } else if (text.replace("script:", "").trim() === this.scriptName) {
-                    mdScriptName = this.scriptName
-                }
-            });
-
-            this.enabled = mdScriptName == this.scriptName;
-            if (this.enabled && mdVersion > this.version) {
-                markdownBody.append(
-                    `<h2 style='background-color:yellow'>Update the ${this.scriptName} script to ${text} or above.</h2>` +
-                    "Follow the <a target='_blank' href='https://github.com/johnwu1114/tampermonkey?tab=readme-ov-file#update-script'>document</a> to perform the update."
-                );
-            }
-
-            if (this.enabled) {
-                markdownBody.find("blockquote").remove();
-                markdownBody.find("code").remove();
-            }
-
-            return this.enabled;
-        },
         setupMarkdown() {
-            if (!this.checkVersion()) return;
-
-            // Setup markdown
             console.log("Setting up markdown...");
             const markdownBody = $("div.kbnMarkdown__body");
             markdownBody.append("<table id='forecast_table'/>");
@@ -119,11 +85,7 @@
                 const { name, isHeader, isFooter, pattern, scoreType, market, align } = item;
                 const row = $("<tr/>");
                 row.append(`<td>${name}</td>`);
-                if (isHeader) {
-                    row.css("border-top", "solid").css("background-color", "#eee").css("font-weight", "bold");
-                    for (let i = -this.scoreRange; i <= this.scoreRange; i++)
-                        row.append(`<td style="text-align:${align}"><span id='forecast_${pattern}_${i}'>Loading...</span></td>`);
-                } else if (isFooter) {
+                if (isHeader || isFooter) {
                     row.css("border-top", "solid").css("background-color", "#eee").css("font-weight", "bold");
                     for (let i = -this.scoreRange; i <= this.scoreRange; i++)
                         row.append(`<td style="text-align:${align}"><span id='forecast_${pattern}_${i}'>Loading...</span></td>`);
@@ -139,8 +101,6 @@
             markdownBody.append(table);
         },
         updateScore() {
-            if (!this.enabled) return;
-
             let matchName = "";
             $(".euiFormControlLayout").each((_, elem) => {
                 if ($(elem).find("label").text().trim() !== "Match") return;
@@ -174,8 +134,6 @@
             return isScoreChanged;
         },
         setupTable() {
-            if (!this.enabled) return;
-
             console.log("Setting up forecast tables...");
 
             this.templates.forEach(template => {
@@ -318,11 +276,11 @@
                 Handicap = utils.parseAmount(Handicap);
                 let originalHandicap = Handicap - scoreDiff;
                 let outcome = forecastScoreDiff + originalHandicap;
-                let forecast = this.calculateAsianHandicap(outcome, HomeStake, HomeLiability);
+                let forecast = common.calculateAsianHandicap(outcome, HomeStake, HomeLiability);
 
                 originalHandicap = Handicap - scoreDiff * -1;
                 outcome = forecastScoreDiff * -1 + originalHandicap;
-                forecast += this.calculateAsianHandicap(outcome, AwayStake, AwayLiability);
+                forecast += common.calculateAsianHandicap(outcome, AwayStake, AwayLiability);
 
                 forecast += CashOutWinLoss;
                 utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
@@ -472,14 +430,6 @@
                         .each((_, td) => utils.colorWinLoss($(td)));
                 });
             });
-        },
-        calculateAsianHandicap(outcome, stake, liability) {
-            if (outcome >= 0.5) return -liability;
-            if (outcome === 0.25) return -liability / 2;
-            if (outcome === 0) return 0;
-            if (outcome === -0.25) return stake / 2;
-            if (outcome <= -0.5) return stake;
-            return 0;
         }
     };
 

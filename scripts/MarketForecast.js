@@ -8,6 +8,7 @@
 // @match        http://operation.uat.share.com/*
 // @grant        none
 // @require      https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js
+// @require      https://raw.githubusercontent.com/johnwu1114/tampermonkey/main/scripts/common.js
 // @require      https://raw.githubusercontent.com/johnwu1114/tampermonkey/main/scripts/utils.js
 // ==/UserScript==
 
@@ -21,6 +22,7 @@
         enabled: false,
         summaryCount: 0,
         delayTime: 1000,
+        processing: undefined,
         inputs: ["ft", "ft_corners", "ht", "ht_corners"],
         strategies: [
             { market: "ft_1x2", algorithm: "1x2" },
@@ -63,41 +65,9 @@
                 }
             });
         },
-        checkVersion() {
-            const markdownBody = $("div.kbnMarkdown__body");
-            if (!markdownBody.length) {
-                this.enabled = false;
-                return false;
-            }
-
-            let mdScriptName = "";
-            let mdVersion = "";
-            markdownBody.find("code").each((_, code) => {
-                const text = $(code).text().trim();
-                if (text.indexOf("version") !== -1) {
-                    mdVersion = text.replace("version:", "").trim();
-                } else if (text.replace("script:", "").trim() === this.scriptName) {
-                    mdScriptName = this.scriptName
-                }
-            });
-
-            this.enabled = mdScriptName == this.scriptName;
-            if (this.enabled && mdVersion > this.version) {
-                markdownBody.append(
-                    `<h2 style='background-color:yellow'>Update the ${this.scriptName} script to ${text} or above.</h2>` +
-                    "Follow the <a target='_blank' href='https://github.com/johnwu1114/tampermonkey?tab=readme-ov-file#update-script'>document</a> to perform the update."
-                );
-            }
-
-            if (this.enabled) {
-                markdownBody.find("blockquote").remove();
-                markdownBody.find("code").remove();
-            }
-
-            return this.enabled;
-        },
         setupMarkdown() {
-            if (!this.checkVersion()) return;
+            this.enabled = common.checkVersion(this.scriptName, this.version);
+            if (!this.enabled) return;
 
             // Setup markdown
             console.log("Setting up markdown...");
@@ -295,11 +265,11 @@
                 Handicap = utils.parseAmount(Handicap);
                 let originalHandicap = Handicap - scoreDiff;
                 let outcome = inputScoreDiff + originalHandicap;
-                let forecast = this.calculateAsianHandicap(outcome, HomeStake, HomeLiability);
+                let forecast = common.calculateAsianHandicap(outcome, HomeStake, HomeLiability);
 
                 originalHandicap = Handicap - scoreDiff * -1;
                 outcome = inputScoreDiff * -1 + originalHandicap;
-                forecast += this.calculateAsianHandicap(outcome, AwayStake, AwayLiability);
+                forecast += common.calculateAsianHandicap(outcome, AwayStake, AwayLiability);
 
                 forecast += CashOutWinLoss;
                 utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
@@ -443,14 +413,6 @@
                         .each((_, td) => utils.colorWinLoss($(td)));
                 });
             });
-        },
-        calculateAsianHandicap(outcome, stake, liability) {
-            if (outcome >= 0.5) return -liability;
-            if (outcome === 0.25) return -liability / 2;
-            if (outcome === 0) return 0;
-            if (outcome === -0.25) return stake / 2;
-            if (outcome <= -0.5) return stake;
-            return 0;
         }
     };
 
