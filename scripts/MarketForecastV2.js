@@ -36,6 +36,7 @@
             { name: "Full Time Corners", isHeader: true, pattern: "score_ft_corners", align: "center" },
             { name: "Corners: Asian Handicap", scoreType: "ft_corners", market: "ah", align: "right", algorithm: "ah" },
             { name: "Corners: Over / Under", scoreType: "ft_corners", market: "ou", align: "right", algorithm: "ou" },
+            { name: "Full Time Total", isFooter: true, pattern: "ft_total", align: "right" },
             { name: "Half Time", isHeader: true, pattern: "score_ht", align: "center" },
             { name: "1 x 2", scoreType: "ht", market: "1x2", align: "right", algorithm: "1x2" },
             { name: "Asian Handicap", scoreType: "ht", market: "ah", align: "right", algorithm: "ah" },
@@ -46,7 +47,8 @@
             { name: "Half Time Corners", isHeader: true, pattern: "score_ht_corners", align: "center" },
             { name: "Corners: Asian Handicap", scoreType: "ht_corners", market: "ah", align: "right", algorithm: "ah" },
             { name: "Corners: Over / Under", scoreType: "ht_corners", market: "ou", align: "right", algorithm: "ou" },
-            { name: "Total", isFooter: true, pattern: "total", align: "right" },
+            { name: "Half Time Total", isFooter: true, pattern: "ht_total", align: "right" },
+            { name: "Overall", isFooter: true, pattern: "total", align: "right" },
         ],
         start() {
             const observer = new MutationObserver(this.observeMutations.bind(this));
@@ -190,11 +192,17 @@
         renderTotalForecast() {
             if (!this.hasScore) return;
             for (let i = -this.scoreRange; i <= this.scoreRange; i++) {
-                let totalForecast = 0;
+                let ftForecast = 0;
+                let htForecast = 0;
                 $(`[data-type='${i}_total']`).each((_, elem) => {
-                    totalForecast += utils.parseAmount($(elem).text());
+                    if ($(elem).attr("id").includes("_ft_"))
+                        ftForecast += utils.parseAmount($(elem).text());
+                    else
+                        htForecast += utils.parseAmount($(elem).text());
                 });
-                utils.colorWinLoss($(`#forecast_total_${i}`).text(utils.toAmountStr(totalForecast)));
+                utils.colorWinLoss($(`#forecast_ft_total_${i}`).text(utils.toAmountStr(ftForecast)));
+                utils.colorWinLoss($(`#forecast_ht_total_${i}`).text(utils.toAmountStr(htForecast)));
+                utils.colorWinLoss($(`#forecast_total_${i}`).text(utils.toAmountStr(ftForecast + htForecast)));
             }
         },
         render_1x2(scoreType, market, scoreIndex, tables) {
