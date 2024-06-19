@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Market Forecast
 // @namespace    http://tampermonkey.net/
-// @version      1.8
+// @version      1.9
 // @description  Forecast market results based on the score inputted by the user in Kibana dashboard.
 // @author       John Wu
 // @match        http://*.252:5601/*
@@ -14,12 +14,12 @@
 (function () {
     "use strict";
     const $ = window.jQuery;
-    const version = "1.8";
+    const scriptName = "MarketForecast";
+    const version = "1.9";
 
     const forecast = {
         enabled: false,
         summaryCount: 0,
-        registeredTime: 0,
         delayTime: 1000,
         inputs: ["ft", "ft_corners", "ht", "ht_corners"],
         strategies: [
@@ -56,39 +56,43 @@
                         }
                     });
                 } else if (mutation.target.tagName === "TBODY") {
-                    this.setupTable();
+                    clearTimeout(this.processing);
+                    this.processing = setTimeout(() => {
+                        this.setupTable();
+                    }, this.delayTime);
                 }
             });
         },
         checkVersion() {
-            let supportVersion = "0";
-            const markdownBody = $("div.kbnMarkdown__body");
-            markdownBody.find("blockquote h1").remove();
-            markdownBody.find("blockquote h2").remove(); // Temporarily remove the update script message
-            markdownBody.find("code").each((_, code) => {
-                const text = $(code).text().trim();
-                if (text.indexOf("version") === -1) return;
-                $(code).remove();
-                supportVersion = text.replace("version:", "").trim();
-            });
-            if (version >= supportVersion) return;
-
-            markdownBody.find("blockquote").append(
-                "<h2 style='background-color:yellow'>Update Script</h2>" +
-                "Follow the <a target='_blank' href='https://github.com/johnwu1114/tampermonkey?tab=readme-ov-file#update-script'>document</a> to perform the update."
-            );
-        },
-        setupMarkdown() {
             const markdownBody = $("div.kbnMarkdown__body");
             if (!markdownBody.length) {
                 this.enabled = false;
-                return;
+                return false;
             }
 
-            this.checkVersion();
+            markdownBody.find("blockquote").remove();
+            markdownBody.find("code").each((_, code) => {
+                const text = $(code).text().trim();
+                if (text.indexOf("version") !== -1 && text.replace("version:", "").trim() > version) {
+                    markdownBody.append(
+                        `<h2 style='background-color:yellow'>Update the ${scriptName} script to ${text} or above.</h2>` +
+                        "Follow the <a target='_blank' href='https://github.com/johnwu1114/tampermonkey?tab=readme-ov-file#update-script'>document</a> to perform the update."
+                    );
+                }
+                if (text.replace("script:", "").trim() === scriptName) {
+                    this.enabled = true;
+                }
+                $(code).remove();
+            });
+
+            return this.enabled;
+        },
+        setupMarkdown() {
+            if (!this.checkVersion()) return;
 
             // Setup markdown
             console.log("Setting up markdown...");
+            const markdownBody = $("div.kbnMarkdown__body");
             let html = markdownBody.html();
             this.inputs.forEach(inputName => {
                 html = html.replace(`{{forecast_${inputName}_score}}`, `<input id='forecast_${inputName}_score' type='text' class='euiFieldText' />`);
@@ -112,24 +116,19 @@
         },
         setupTable() {
             if (!this.enabled) return;
-            if (Date.now() - this.registeredTime < this.delayTime) return;
 
             const existCount = $(this.strategies.map(strategy => `[data-type="forecast_${strategy.market}"]`).join(",")).length;
             const noResultsCount = $("[ng-controller='EnhancedTableVisController'] .euiText").filter((_, table) => $(table).text().trim() === "No results found").length;
             if ((existCount + noResultsCount) >= this.summaryCount) return;
 
-            this.registeredTime = Date.now();
-
             console.log("Setting up forecast tables...");
-            setTimeout(() => {
-                this.strategies.forEach(strategy => {
-                    const target = `forecast_${strategy.market}`;
-                    $("enhanced-paginated-table")
-                        .filter((_, table) => $(table).html().includes(`{{${target}}}`))
-                        .attr("data-type", target);
-                });
-                this.inputs.forEach(inputName => this[`render_${inputName}`]());
-            }, this.delayTime);
+            this.strategies.forEach(strategy => {
+                const target = `forecast_${strategy.market}`;
+                $("enhanced-paginated-table")
+                    .filter((_, table) => $(table).html().includes(`{{${target}}}`))
+                    .attr("data-type", target);
+            });
+            this.inputs.forEach(inputName => this[`render_${inputName}`]());
         },
         renderTotalForecast() {
             let fullTimeTotal = 0;

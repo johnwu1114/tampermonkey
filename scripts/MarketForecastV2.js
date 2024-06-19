@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Market Forecast V2
 // @namespace    http://tampermonkey.net/
-// @version      2.0
+// @version      2.1
 // @description  Forecast market results based on the score inputted by the user in Kibana dashboard.
 // @author       John Wu
 // @match        http://*.252:5601/*
@@ -15,15 +15,15 @@
     "use strict";
     const $ = window.jQuery;
     const scriptName = "MarketForecastV2";
-    const version = "2.0";
+    const version = "2.1";
 
     const forecast = {
         enabled: false,
         summaryCount: 0,
-        lastUpdateTime: {},
         hasScore: false,
         delayTime: 1000,
         scoreRange: 3,
+        processing: undefined,
         templates: [
             { name: "Full Time", isHeader: true, pattern: "score_ft", align: "center" },
             { name: "1 x 2", scoreType: "ft", market: "1x2", align: "right", algorithm: "1x2" },
@@ -63,8 +63,11 @@
                         }
                     });
                 } else if (mutation.target.tagName === "TBODY") {
-                    this.updateScore();
-                    this.setupTable();
+                    clearTimeout(this.processing);
+                    this.processing = setTimeout(() => {
+                        this.updateScore();
+                        this.setupTable();
+                    }, this.delayTime);
                 }
             });
         },
@@ -126,8 +129,6 @@
         },
         updateScore() {
             if (!this.enabled) return;
-            if (Date.now() - this.lastUpdateTime["updateScore"] < this.delayTime) return;
-            this.lastUpdateTime["updateScore"] = Date.now();
 
             let matchName = "";
             $(".euiFormControlLayout").each((_, elem) => {
@@ -163,24 +164,21 @@
         },
         setupTable() {
             if (!this.enabled) return;
-            if (Date.now() - this.lastUpdateTime["setupTable"] < this.delayTime) return;
-            this.lastUpdateTime["setupTable"] = Date.now();
 
             console.log("Setting up forecast tables...");
-            setTimeout(() => {
-                this.templates.forEach(template => {
-                    if (template.isHeader || template.isFooter) return;
-                    const target = `forecast_${template.scoreType}_${template.market}`;
-                    $("enhanced-paginated-table")
-                        .filter((_, table) => $(table).html().includes(`{{${target}}}`))
-                        .attr("data-type", target);
 
-                    for (let i = -this.scoreRange; i <= this.scoreRange; i++) {
-                        this.renderTable(template.scoreType, template.market, i, this[`render_${template.algorithm}`].bind(this));
-                    }
-                });
-                this.renderTotalForecast();
-            }, this.delayTime);
+            this.templates.forEach(template => {
+                if (template.isHeader || template.isFooter) return;
+                const target = `forecast_${template.scoreType}_${template.market}`;
+                $("enhanced-paginated-table")
+                    .filter((_, table) => $(table).html().includes(`{{${target}}}`))
+                    .attr("data-type", target);
+
+                for (let i = -this.scoreRange; i <= this.scoreRange; i++) {
+                    this.renderTable(template.scoreType, template.market, i, this[`render_${template.algorithm}`].bind(this));
+                }
+            });
+            this.renderTotalForecast();
         },
         renderTable(scoreType, market, scoreIndex, renderFunction) {
             const target = `forecast_${scoreType}_${market}`;
