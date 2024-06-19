@@ -21,8 +21,9 @@
         enabled: false,
         summaryCount: 0,
         lastUpdateTime: {},
+        isScoreChanged: false,
         delayTime: 1000,
-        scoreRange: 2,
+        scoreRange: 3,
         templates: [
             { name: "Full Time", isHeader: true, pattern: "score_ft", align: "center" },
             { name: "1 x 2", scoreType: "ft", market: "1x2", align: "right", algorithm: "1x2" },
@@ -74,12 +75,12 @@
                 return false;
             }
 
-            markdownBody.find("blockquote h1").remove();
+            markdownBody.find("blockquote").remove();
             markdownBody.find("code").each((_, code) => {
                 const text = $(code).text().trim();
-                if (text.indexOf("version") !== -1 && text.replace("version:", "").trim() >= version) {
-                    markdownBody.find("blockquote").append(
-                        "<h2 style='background-color:yellow'>Update Script</h2>" +
+                if (text.indexOf("version") !== -1 && text.replace("version:", "").trim() > version) {
+                    markdownBody.append(
+                        `<h2 style='background-color:yellow'>Update the ${scriptName} script to ${text} or above.</h2>` +
                         "Follow the <a target='_blank' href='https://github.com/johnwu1114/tampermonkey?tab=readme-ov-file#update-script'>document</a> to perform the update."
                     );
                 }
@@ -116,7 +117,7 @@
                 }
                 else {
                     for (let i = -this.scoreRange; i <= this.scoreRange; i++)
-                        row.append(`<td style="text-align:${align};${(i == 0) ? "background-color:#ffc" : ""}"><span id='forecast_${scoreType}_${market}_${i}_total'>Loading...</span></td>`);
+                        row.append(`<td style="text-align:${align};${(i == 0) ? "background-color:#ffc" : ""}"><span data-type='${i}_total' id='forecast_${scoreType}_${market}_${i}_total'>Loading...</span></td>`);
                 }
 
                 table.append(row);
@@ -130,7 +131,6 @@
             this.lastUpdateTime["updateScore"] = Date.now();
 
             let matchName = "";
-            let isScoreChanged = false;
             $(".euiFormControlLayout").each((_, elem) => {
                 if ($(elem).find("label").text().trim() !== "Match") return;
                 matchName = $(elem).find(".euiButtonContent [data-text]").attr("data-text");
@@ -143,14 +143,14 @@
                     const [ftScore, htScore, ftCornerScore, htCornerScore] = $(row).find("td").map((_, x) => $(x).text()).slice(1);
 
                     for (let i = -this.scoreRange; i <= this.scoreRange; i++) {
-                        this.setScore("forecast_score_ft", ftScore, i) && (isScoreChanged = true);
-                        this.setScore("forecast_score_ht", htScore, i) && (isScoreChanged = true);
-                        this.setScore("forecast_score_ft_corners", ftCornerScore, i) && (isScoreChanged = true);
-                        this.setScore("forecast_score_ht_corners", htCornerScore, i) && (isScoreChanged = true);
+                        this.setScore("forecast_score_ft", ftScore, i) && (this.isScoreChanged = true);
+                        this.setScore("forecast_score_ht", htScore, i) && (this.isScoreChanged = true);
+                        this.setScore("forecast_score_ft_corners", ftCornerScore, i) && (this.sScoreChanged = true);
+                        this.setScore("forecast_score_ht_corners", htCornerScore, i) && (this.sScoreChanged = true);
                     }
                 });
             });
-            console.log("Score updated...", isScoreChanged);
+            console.log("Score updated...", this.isScoreChanged);
         },
         setScore(key, score, diff) {
             let [homeScore, awayScore] = score.split("-").map(Number);
@@ -166,6 +166,7 @@
         setupTable() {
             if (!this.enabled) return;
             if (Date.now() - this.lastUpdateTime["setupTable"] < this.delayTime) return;
+            if (!this.isScoreChanged) return;
 
             this.lastUpdateTime["setupTable"] = Date.now();
 
@@ -182,6 +183,8 @@
                         this.renderTable(template.scoreType, template.market, i, this[`render_${template.algorithm}`].bind(this));
                     }
                 });
+                this.renderTotalForecast();
+                this.isScoreChanged = false;
             }, this.delayTime);
         },
         renderTable(scoreType, market, scoreIndex, renderFunction) {
@@ -191,11 +194,21 @@
             if (!tables.length) return;
             renderFunction(scoreType, market, scoreIndex, tables);
         },
+        renderTotalForecast() {
+            let totalForecast = 0;
+
+            for (let i = -this.scoreRange; i <= this.scoreRange; i++) {
+                $(`[data-type='${i}_total']`).each((_, elem) => {
+                    totalForecast += utils.parseAmount($(elem).text());
+                });
+                utils.colorWinLoss($(`#forecast_total_${i}`).text(utils.toAmountStr(totalForecast)));
+            }
+        },
         render_1x2(scoreType, market, scoreIndex, tables) {
             const [homeScore, awayScore] = $(`#forecast_score_${scoreType}_${scoreIndex}`).text().split("-").map(Number);
             const forecastResult = homeScore === awayScore ? "Draw" : homeScore > awayScore ? "Home" : "Away";
-            let totalForecast = 0;
-            this.processTables(market, tables, (row, cells) => {
+
+            this.processTables(scoreType, market, scoreIndex, tables, (row, cells) => {
                 let {
                     Selection,
                     "Void Stake": VoidStake,
@@ -213,18 +226,16 @@
                     row.css("background-color", "#ffffc8");
                 }
                 forecast += CashOutWinLoss;
-                totalForecast += forecast;
                 utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
                 return forecast;
             });
-            utils.colorWinLoss($(`#forecast_${scoreType}_${market}_${scoreIndex}_total`).text(utils.toAmountStr(totalForecast)));
         },
         render_ou(scoreType, market, scoreIndex, tables) {
             const [homeScore, awayScore] = $(`#forecast_score_${scoreType}_${scoreIndex}`).text().split("-").map(Number);
             let forecastGoals = homeScore + awayScore;
             let lastHandicap = 0;
-            let totalForecast = 0;
-            this.processTables(market, tables, (row, cells) => {
+
+            this.processTables(scoreType, market, scoreIndex, tables, (row, cells) => {
                 let {
                     Goals,
                     Team,
@@ -259,17 +270,15 @@
                 }
 
                 forecast += CashOutWinLoss;
-                totalForecast += forecast;
                 utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
                 return forecast;
             });
-            utils.colorWinLoss($(`#forecast_${scoreType}_${market}_${scoreIndex}_total`).text(utils.toAmountStr(totalForecast)));
         },
         render_ah(scoreType, market, scoreIndex, tables) {
             const [homeScore, awayScore] = $(`#forecast_score_${scoreType}_${scoreIndex}`).text().split("-").map(Number);
             const forecastScoreDiff = homeScore - awayScore;
-            let totalForecast = 0;
-            this.processTables(market, tables, (row, cells) => {
+
+            this.processTables(scoreType, market, scoreIndex, tables, (row, cells) => {
                 let {
                     Score,
                     "Corners Score": CornersScore,
@@ -306,16 +315,14 @@
                 forecast += this.calculateAsianHandicap(outcome, AwayStake, AwayLiability);
 
                 forecast += CashOutWinLoss;
-                totalForecast += forecast;
                 utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
                 return forecast;
             });
-            utils.colorWinLoss($(`#forecast_${scoreType}_${market}_${scoreIndex}_total`).text(utils.toAmountStr(totalForecast)));
         },
         render_cs(scoreType, market, scoreIndex, tables) {
             const forecastResult = $(`#forecast_score_${scoreType}_${scoreIndex}`).text().trim();
-            let totalForecast = 0;
-            this.processTables(market, tables, (row, cells) => {
+
+            this.processTables(scoreType, market, scoreIndex, tables, (row, cells) => {
                 let {
                     Score,
                     Stake,
@@ -335,17 +342,15 @@
                     row.css("background-color", "#ffffc8");
                 }
                 forecast += CashOutWinLoss;
-                totalForecast += forecast;
                 utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
                 return forecast;
             });
-            utils.colorWinLoss($(`#forecast_${scoreType}_${market}_${scoreIndex}_total`).text(utils.toAmountStr(totalForecast)));
         },
         render_bts(scoreType, market, scoreIndex, tables) {
             const [homeScore, awayScore] = $(`#forecast_score_${scoreType}_${scoreIndex}`).text().split("-").map(Number);
             const isBothTeamsToScore = homeScore > 0 && awayScore > 0;
-            let totalForecast = 0;
-            this.processTables(market, tables, (row, cells) => {
+
+            this.processTables(scoreType, market, scoreIndex, tables, (row, cells) => {
                 let {
                     Selection,
                     "Void Stake": VoidStake,
@@ -365,11 +370,9 @@
                     row.css("background-color", "#ffffc8");
                 }
                 forecast += CashOutWinLoss;
-                totalForecast += forecast;
                 utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
                 return forecast;
             });
-            utils.colorWinLoss($(`#forecast_${scoreType}_${market}_${scoreIndex}_total`).text(utils.toAmountStr(totalForecast)));
         },
         render_htft(scoreType, market, scoreIndex, tables) {
             const [ftHomeScore, ftAwayScore] = $(`#forecast_score_ft_${scoreIndex}`).text().split("-").map(Number);
@@ -377,8 +380,8 @@
             const ftWinner = ftHomeScore === ftAwayScore ? "Draw" : ftHomeScore > ftAwayScore ? "Home" : "Away";
             const htWinner = htHomeScore === htAwayScore ? "Draw" : htHomeScore > htAwayScore ? "Home" : "Away";
             const forecastResult = `${htWinner}/${ftWinner}`;
-            let totalForecast = 0;
-            this.processTables(market, tables, (row, cells) => {
+
+            this.processTables(scoreType, market, scoreIndex, tables, (row, cells) => {
                 let {
                     Selection,
                     Stake,
@@ -398,13 +401,11 @@
                     row.css("background-color", "#ffffc8");
                 }
                 forecast += CashOutWinLoss;
-                totalForecast += forecast;
                 utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
                 return forecast;
             });
-            utils.colorWinLoss($(`#forecast_${scoreType}_${market}_${scoreIndex}_total`).text(utils.toAmountStr(totalForecast)));
         },
-        processTables(market, tables, processRow) {
+        processTables(scoreType, market, scoreIndex, tables, processRow) {
             tables.each((_, tab) => {
                 const table = $(tab);
                 let totalForecast = 0;
@@ -431,8 +432,13 @@
                 table.find("tbody td").each((_, td) => {
                     if ($(td).text().trim() === "0.00") $(td).find("div").text("0");
                 });
-                table.find("tfoot th:last").text(utils.toAmountStr(totalForecast));
-                utils.colorWinLoss($(`#forecast_${market}_total`).text(utils.toAmountStr(totalForecast)));
+
+                if (scoreIndex === 0) {
+                    table.find("tfoot th:last").text(utils.toAmountStr(totalForecast));
+                    utils.colorWinLoss($(`#forecast_${market}_total`).text(utils.toAmountStr(totalForecast)));
+                }
+
+                utils.colorWinLoss($(`#forecast_${scoreType}_${market}_${scoreIndex}_total`).text(utils.toAmountStr(totalForecast)));
 
                 // Hide void and cashout columns
                 [
