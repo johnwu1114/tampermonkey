@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Market Forecast V2
 // @namespace    http://tampermonkey.net/
-// @version      2.4
+// @version      2.6
 // @description  Forecast market results based on the score inputted by the user in Kibana dashboard.
 // @author       John Wu
 // @match        http://*.252:5601/*
@@ -18,7 +18,7 @@
 
     const forecastV2 = {
         scriptName: "MarketForecastV2",
-        version: "2.4",
+        version: "2.6",
         enabled: false,
         summaryCount: 0,
         hasScore: false,
@@ -126,7 +126,7 @@
                 $(elem).find("tr").each((_, row) => {
                     if (!$(row).find("td:first").text().includes(matchName)) return;
                     const [ftScore, htScore, ftCornerScore, htCornerScore, timer] = $(row).find("td").map((_, x) => $(x).text()).slice(1);
-                    this.fixedHt = timer > "45:00";
+                    this.fixedHt = parseInt(timer.replace(":", "")) > 4500;
                     for (let i = -this.scoreRange; i <= this.scoreRange; i++) {
                         this.setScore("forecast_score_ft", ftScore, i) && (this.hasScore = true);
                         this.setScore("forecast_score_ht", htScore, i) && (this.hasScore = true);
