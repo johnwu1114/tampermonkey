@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Market Forecast V2
 // @namespace    http://tampermonkey.net/
-// @version      2.2
+// @version      2.4
 // @description  Forecast market results based on the score inputted by the user in Kibana dashboard.
 // @author       John Wu
 // @match        http://*.252:5601/*
@@ -18,7 +18,7 @@
 
     const forecastV2 = {
         scriptName: "MarketForecastV2",
-        version: "2.2",
+        version: "2.4",
         enabled: false,
         summaryCount: 0,
         hasScore: false,
@@ -28,19 +28,6 @@
         latestUpdate: 0,
         fixedHt: false,
         templates: [
-            { name: "Half Time", isBold: true, isColspan: true, align: "center" },
-            { name: "Half Time", isBold: true, pattern: "score_ht", align: "center" },
-            { name: "1 x 2", scoreType: "ht", market: "1x2", algorithm: "1x2", align: "right" },
-            { name: "Asian Handicap", scoreType: "ht", market: "ah", algorithm: "ah", align: "right" },
-            { name: "Over / Under", scoreType: "ht", market: "ou", algorithm: "ou", align: "right" },
-            { name: "Correct Score", scoreType: "ht", market: "cs", algorithm: "cs", align: "right" },
-            { name: "Both Teams to Score", scoreType: "ht", market: "bts", algorithm: "bts", align: "right" },
-            { name: "Team Goals Over/Under", scoreType: "ht", market: "tgou", algorithm: "ou", align: "right" },
-            { name: "Half Time Corners", isBold: true, pattern: "score_ht_corners", align: "center" },
-            { name: "Corners: Asian Handicap", scoreType: "ht_corners", market: "ah", algorithm: "ah", align: "right" },
-            { name: "Corners: Over / Under", scoreType: "ht_corners", market: "ou", algorithm: "ou", align: "right" },
-            { name: "Half Time Total", isBold: true, pattern: "total_ht", align: "right" },
-
             { name: "Full Time", isBold: true, isColspan: true, align: "center" },
             { name: "Full Time", isBold: true, pattern: "score_ft", align: "center" },
             { name: "1 x 2", scoreType: "ft", market: "1x2", algorithm: "1x2", align: "right" },
@@ -54,6 +41,19 @@
             { name: "Corners: Asian Handicap", scoreType: "ft_corners", market: "ah", algorithm: "ah", align: "right" },
             { name: "Corners: Over / Under", scoreType: "ft_corners", market: "ou", algorithm: "ou", align: "right" },
             { name: "Full Time Total", isBold: true, pattern: "total_ft", align: "right" },
+
+            { name: "Half Time", isBold: true, isColspan: true, align: "center" },
+            { name: "Half Time", isBold: true, pattern: "score_ht", align: "center" },
+            { name: "1 x 2", scoreType: "ht", market: "1x2", algorithm: "1x2", align: "right" },
+            { name: "Asian Handicap", scoreType: "ht", market: "ah", algorithm: "ah", align: "right" },
+            { name: "Over / Under", scoreType: "ht", market: "ou", algorithm: "ou", align: "right" },
+            { name: "Correct Score", scoreType: "ht", market: "cs", algorithm: "cs", align: "right" },
+            { name: "Both Teams to Score", scoreType: "ht", market: "bts", algorithm: "bts", align: "right" },
+            { name: "Team Goals Over/Under", scoreType: "ht", market: "tgou", algorithm: "ou", align: "right" },
+            { name: "Half Time Corners", isBold: true, pattern: "score_ht_corners", align: "center" },
+            { name: "Corners: Asian Handicap", scoreType: "ht_corners", market: "ah", algorithm: "ah", align: "right" },
+            { name: "Corners: Over / Under", scoreType: "ht_corners", market: "ou", algorithm: "ou", align: "right" },
+            { name: "Half Time Total", isBold: true, pattern: "total_ht", align: "right" },
 
             { name: "Overall", isBold: true, pattern: "total", align: "right" }
         ],
@@ -257,7 +257,7 @@
                     if (scoreIndex === 0) row.css("background-color", "#ffffc8");
                 }
                 forecast += CashOutWinLoss;
-                utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
+                if (scoreIndex === 0) utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
                 return forecast;
             });
         },
@@ -301,7 +301,7 @@
                 }
 
                 forecast += CashOutWinLoss;
-                utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
+                if (scoreIndex === 0) utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
                 return forecast;
             });
         },
@@ -346,13 +346,13 @@
                 forecast += common.calculateAsianHandicap(outcome, AwayStake, AwayLiability);
 
                 forecast += CashOutWinLoss;
-                utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
+                if (scoreIndex === 0) utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
                 return forecast;
             });
         },
         processTables(scoreType, market, scoreIndex, tables, processRow) {
-            tables.each((_, tab) => {
-                const table = $(tab);
+            tables.each((_, elem) => {
+                const table = $(elem);
                 let totalForecast = 0;
 
                 const headers = table.find("thead th").map((_, th) => $(th).text().trim()).get();
@@ -363,7 +363,8 @@
                     }
 
                     let cells = {};
-                    $(row).css("background-color", "").find("td").each((index, cell) => {
+                    if (scoreIndex === 0) $(row).css("background-color", "");
+                    $(row).find("td").each((index, cell) => {
                         cells[index] = cells[headers[index]] = $(cell).text().trim();
                     });
                     if (!Object.keys(cells).length) return;
@@ -383,13 +384,11 @@
                     utils.colorWinLoss($(`#forecast_total_${market}`).text(utils.toAmountStr(totalForecast)));
                 }
 
-                if (this.hasScore) {
-                    if (scoreIndex !== 0 && this.fixedHt && scoreType.includes("ht")) {
-                        $(`#forecast_score_${scoreType}_${scoreIndex}`).text("");
-                        $(`#forecast_total_${scoreType}_${market}_${scoreIndex}`).text("");
-                    } else {
-                        utils.colorWinLoss($(`#forecast_total_${scoreType}_${market}_${scoreIndex}`).text(utils.toAmountStr(totalForecast)));
-                    }
+                if (scoreIndex !== 0 && this.fixedHt && scoreType.includes("ht")) {
+                    $(`#forecast_score_${scoreType}_${scoreIndex}`).text("");
+                    $(`#forecast_total_${scoreType}_${market}_${scoreIndex}`).text("");
+                } else {
+                    utils.colorWinLoss($(`#forecast_total_${scoreType}_${market}_${scoreIndex}`).text(utils.toAmountStr(totalForecast)));
                 }
 
                 // Hide void and cashout columns
@@ -406,7 +405,7 @@
                 });
 
                 // Color win/loss columns
-                ["CashOut WinLoss", "Forecast"].forEach(colName => {
+                ["Forecast"].forEach(colName => {
                     const colNum = headers.indexOf(colName) + 1;
                     if (colNum === 0) return;
                     table.find("tr").find(`th:nth-child(${colNum}),td:nth-child(${colNum})`)
