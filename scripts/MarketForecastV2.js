@@ -25,31 +25,34 @@
         delayTime: 1000,
         scoreRange: 3,
         processing: undefined,
+        latestUpdate: 0,
         templates: [
-            { name: "Full Time", isHeader: true, pattern: "score_ft", align: "center" },
-            { name: "1 x 2", scoreType: "ft", market: "1x2", align: "right", algorithm: "1x2" },
-            { name: "Asian Handicap", scoreType: "ft", market: "ah", align: "right", algorithm: "ah" },
-            { name: "Over / Under", scoreType: "ft", market: "ou", align: "right", algorithm: "ou" },
-            { name: "Correct Score", scoreType: "ft", market: "cs", align: "right", algorithm: "cs" },
-            { name: "Both Teams to Score", scoreType: "ft", market: "bts", align: "right", algorithm: "bts" },
-            { name: "Team Goals Over/Under", scoreType: "ft", market: "tgou", align: "right", algorithm: "ou" },
-            { name: "Half-time / Full-time", scoreType: "ft", market: "htft", align: "right", algorithm: "htft" },
-            { name: "Full Time Corners", isHeader: true, pattern: "score_ft_corners", align: "center" },
-            { name: "Corners: Asian Handicap", scoreType: "ft_corners", market: "ah", align: "right", algorithm: "ah" },
-            { name: "Corners: Over / Under", scoreType: "ft_corners", market: "ou", align: "right", algorithm: "ou" },
-            { name: "Full Time Total", isFooter: true, pattern: "ft_total", align: "right" },
-            { name: "Half Time", isHeader: true, pattern: "score_ht", align: "center" },
-            { name: "1 x 2", scoreType: "ht", market: "1x2", align: "right", algorithm: "1x2" },
-            { name: "Asian Handicap", scoreType: "ht", market: "ah", align: "right", algorithm: "ah" },
-            { name: "Over / Under", scoreType: "ht", market: "ou", align: "right", algorithm: "ou" },
-            { name: "Correct Score", scoreType: "ht", market: "cs", align: "right", algorithm: "cs" },
-            { name: "Both Teams to Score", scoreType: "ht", market: "bts", align: "right", algorithm: "bts" },
-            { name: "Team Goals Over/Under", scoreType: "ht", market: "tgou", align: "right", algorithm: "ou" },
-            { name: "Half Time Corners", isHeader: true, pattern: "score_ht_corners", align: "center" },
-            { name: "Corners: Asian Handicap", scoreType: "ht_corners", market: "ah", align: "right", algorithm: "ah" },
-            { name: "Corners: Over / Under", scoreType: "ht_corners", market: "ou", align: "right", algorithm: "ou" },
-            { name: "Half Time Total", isFooter: true, pattern: "ht_total", align: "right" },
-            { name: "Overall", isFooter: true, pattern: "total", align: "right" },
+            { name: "Full Time", isBold: true, isColspan: true },
+            { name: "Full Time", isBold: true, pattern: "score_ft" },
+            { name: "1 x 2", scoreType: "ft", market: "1x2", algorithm: "1x2" },
+            { name: "Asian Handicap", scoreType: "ft", market: "ah", algorithm: "ah" },
+            { name: "Over / Under", scoreType: "ft", market: "ou", algorithm: "ou" },
+            { name: "Correct Score", scoreType: "ft", market: "cs", algorithm: "cs" },
+            { name: "Both Teams to Score", scoreType: "ft", market: "bts", algorithm: "bts" },
+            { name: "Team Goals Over/Under", scoreType: "ft", market: "tgou", algorithm: "ou" },
+            { name: "Half-time / Full-time", scoreType: "ft", market: "htft", algorithm: "htft" },
+            { name: "Full Time Corners", isBold: true, pattern: "score_ft_corners" },
+            { name: "Corners: Asian Handicap", scoreType: "ft_corners", market: "ah", algorithm: "ah" },
+            { name: "Corners: Over / Under", scoreType: "ft_corners", market: "ou", algorithm: "ou" },
+            { name: "Full Time Total", isBold: true, pattern: "total_ft" },
+            { name: "Half Time", isBold: true, isColspan: true },
+            { name: "Half Time", isBold: true, pattern: "score_ht" },
+            { name: "1 x 2", scoreType: "ht", market: "1x2", algorithm: "1x2" },
+            { name: "Asian Handicap", scoreType: "ht", market: "ah", algorithm: "ah" },
+            { name: "Over / Under", scoreType: "ht", market: "ou", algorithm: "ou" },
+            { name: "Correct Score", scoreType: "ht", market: "cs", algorithm: "cs" },
+            { name: "Both Teams to Score", scoreType: "ht", market: "bts", algorithm: "bts" },
+            { name: "Team Goals Over/Under", scoreType: "ht", market: "tgou", algorithm: "ou" },
+            { name: "Half Time Corners", isBold: true, pattern: "score_ht_corners" },
+            { name: "Corners: Asian Handicap", scoreType: "ht_corners", market: "ah", algorithm: "ah" },
+            { name: "Corners: Over / Under", scoreType: "ht_corners", market: "ou", algorithm: "ou" },
+            { name: "Half Time Total", isBold: true, pattern: "total_ht" },
+            { name: "Overall", isBold: true, pattern: "total" },
         ],
         start() {
             const observer = new MutationObserver(this.observeMutations.bind(this));
@@ -67,6 +70,7 @@
                         }
                     });
                 } else if (this.enabled && mutation.target.tagName === "TBODY") {
+                    this.clearTable();
                     clearTimeout(this.processing);
                     this.processing = setTimeout(() => {
                         this.updateScore();
@@ -78,21 +82,28 @@
         setupMarkdown() {
             console.log("Setting up markdown...");
             const markdownBody = $("div.kbnMarkdown__body");
-            markdownBody.append("<table id='forecast_table'/>");
-            const table = $("#forecast_table");
+            markdownBody.append("<table id='forecast_summary'/>");
+            const table = $("#forecast_summary");
 
             this.templates.forEach(item => {
-                const { name, isHeader, isFooter, pattern, scoreType, market, align } = item;
+                const { name, isBold, isColspan, pattern, scoreType, market } = item;
                 const row = $("<tr/>");
-                row.append(`<td>${name}</td>`);
-                if (isHeader || isFooter) {
-                    row.css("border-top", "solid").css("background-color", "#eee").css("font-weight", "bold");
-                    for (let i = -this.scoreRange; i <= this.scoreRange; i++)
-                        row.append(`<td style="text-align:${align}"><span id='forecast_${pattern}_${i}'>Loading...</span></td>`);
-                }
-                else {
-                    for (let i = -this.scoreRange; i <= this.scoreRange; i++)
-                        row.append(`<td style="text-align:${align};${(i == 0) ? "background-color:#ffc" : ""}"><span data-type='${i}_total' id='forecast_${scoreType}_${market}_${i}_total'>Loading...</span></td>`);
+
+                if (isBold) row.css("border-top", "solid").css("background-color", "#eee").css("font-weight", "bold");
+
+                if (isColspan) {
+                    row.append(`<td colspan='${this.scoreRange * 2 + 2}' style="text-align:center">${name}</td>`);
+                } else {
+                    row.append(`<td>${name}</td>`);
+                    for (let i = -this.scoreRange; i <= this.scoreRange; i++) {
+                        if (pattern) {
+                            row.append(`<td style="text-align:center"><span id='forecast_${pattern}_${i}'>Loading...</span></td>`);
+                        }
+                        else {
+                            const background = (i === 0) ? "background-color:#ffc" : "";
+                            row.append(`<td style="text-align:right;${background}"><span data-total='${i}' id='forecast_total_${scoreType}_${market}_${i}'>Loading...</span></td>`);
+                        }
+                    }
                 }
 
                 table.append(row);
@@ -133,11 +144,17 @@
 
             return isScoreChanged;
         },
+        clearTable() {
+            if (Date.now() < this.latestUpdate + this.delayTime) return;
+            console.log("Clearing forecast tables...");
+            $("#forecast_summary td span").text("Loading...").css("color", "");
+            this.latestUpdate = Date.now();
+        },
         setupTable() {
             console.log("Setting up forecast tables...");
 
             this.templates.forEach(template => {
-                if (template.isHeader || template.isFooter) return;
+                if (template.isBold) return;
                 const target = `forecast_${template.scoreType}_${template.market}`;
                 $("enhanced-paginated-table")
                     .filter((_, table) => $(table).html().includes(`{{${target}}}`))
@@ -150,9 +167,9 @@
             this.renderTotalForecast();
         },
         renderTable(scoreType, market, scoreIndex, renderFunction) {
-            const target = `forecast_${scoreType}_${market}`;
-            $(`#${target}_total`).text("Loading...").css("color", "");
-            const tables = $(`[data-type="${target}"]`);
+            const target = `${scoreType}_${market}`;
+            $(`#forecast_total_${target}`).text("Loading...").css("color", "");
+            const tables = $(`[data-type="forecast_${target}"]`);
             if (!tables.length) return;
             renderFunction(scoreType, market, scoreIndex, tables);
         },
@@ -161,14 +178,14 @@
             for (let i = -this.scoreRange; i <= this.scoreRange; i++) {
                 let ftForecast = 0;
                 let htForecast = 0;
-                $(`[data-type='${i}_total']`).each((_, elem) => {
+                $(`[data-total='${i}']`).each((_, elem) => {
                     if ($(elem).attr("id").includes("_ft_"))
                         ftForecast += utils.parseAmount($(elem).text());
                     else
                         htForecast += utils.parseAmount($(elem).text());
                 });
-                utils.colorWinLoss($(`#forecast_ft_total_${i}`).text(utils.toAmountStr(ftForecast)));
-                utils.colorWinLoss($(`#forecast_ht_total_${i}`).text(utils.toAmountStr(htForecast)));
+                utils.colorWinLoss($(`#forecast_total_ft_${i}`).text(utils.toAmountStr(ftForecast)));
+                utils.colorWinLoss($(`#forecast_total_ht_${i}`).text(utils.toAmountStr(htForecast)));
                 utils.colorWinLoss($(`#forecast_total_${i}`).text(utils.toAmountStr(ftForecast + htForecast)));
             }
         },
@@ -403,11 +420,11 @@
 
                 if (scoreIndex === 0) {
                     table.find("tfoot th:last").text(utils.toAmountStr(totalForecast));
-                    utils.colorWinLoss($(`#forecast_${market}_total`).text(utils.toAmountStr(totalForecast)));
+                    utils.colorWinLoss($(`#forecast_total_${market}`).text(utils.toAmountStr(totalForecast)));
                 }
 
                 if (this.hasScore)
-                    utils.colorWinLoss($(`#forecast_${scoreType}_${market}_${scoreIndex}_total`).text(utils.toAmountStr(totalForecast)));
+                    utils.colorWinLoss($(`#forecast_total_${scoreType}_${market}_${scoreIndex}`).text(utils.toAmountStr(totalForecast)));
 
                 // Hide void and cashout columns
                 [
