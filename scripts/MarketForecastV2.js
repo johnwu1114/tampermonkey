@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Market Forecast V2
 // @namespace    http://tampermonkey.net/
-// @version      2.1
+// @version      2.2
 // @description  Forecast market results based on the score inputted by the user in Kibana dashboard.
 // @author       John Wu
 // @match        http://*.252:5601/*
@@ -18,7 +18,7 @@
 
     const forecastV2 = {
         scriptName: "MarketForecastV2",
-        version: "2.1",
+        version: "2.2",
         enabled: false,
         summaryCount: 0,
         hasScore: false,
@@ -26,7 +26,21 @@
         scoreRange: 3,
         processing: undefined,
         latestUpdate: 0,
+        fixedHt: false,
         templates: [
+            { name: "Half Time", isBold: true, isColspan: true },
+            { name: "Half Time", isBold: true, pattern: "score_ht" },
+            { name: "1 x 2", scoreType: "ht", market: "1x2", algorithm: "1x2" },
+            { name: "Asian Handicap", scoreType: "ht", market: "ah", algorithm: "ah" },
+            { name: "Over / Under", scoreType: "ht", market: "ou", algorithm: "ou" },
+            { name: "Correct Score", scoreType: "ht", market: "cs", algorithm: "cs" },
+            { name: "Both Teams to Score", scoreType: "ht", market: "bts", algorithm: "bts" },
+            { name: "Team Goals Over/Under", scoreType: "ht", market: "tgou", algorithm: "ou" },
+            { name: "Half Time Corners", isBold: true, pattern: "score_ht_corners" },
+            { name: "Corners: Asian Handicap", scoreType: "ht_corners", market: "ah", algorithm: "ah" },
+            { name: "Corners: Over / Under", scoreType: "ht_corners", market: "ou", algorithm: "ou" },
+            { name: "Half Time Total", isBold: true, pattern: "total_ht" },
+
             { name: "Full Time", isBold: true, isColspan: true },
             { name: "Full Time", isBold: true, pattern: "score_ft" },
             { name: "1 x 2", scoreType: "ft", market: "1x2", algorithm: "1x2" },
@@ -40,18 +54,7 @@
             { name: "Corners: Asian Handicap", scoreType: "ft_corners", market: "ah", algorithm: "ah" },
             { name: "Corners: Over / Under", scoreType: "ft_corners", market: "ou", algorithm: "ou" },
             { name: "Full Time Total", isBold: true, pattern: "total_ft" },
-            { name: "Half Time", isBold: true, isColspan: true },
-            { name: "Half Time", isBold: true, pattern: "score_ht" },
-            { name: "1 x 2", scoreType: "ht", market: "1x2", algorithm: "1x2" },
-            { name: "Asian Handicap", scoreType: "ht", market: "ah", algorithm: "ah" },
-            { name: "Over / Under", scoreType: "ht", market: "ou", algorithm: "ou" },
-            { name: "Correct Score", scoreType: "ht", market: "cs", algorithm: "cs" },
-            { name: "Both Teams to Score", scoreType: "ht", market: "bts", algorithm: "bts" },
-            { name: "Team Goals Over/Under", scoreType: "ht", market: "tgou", algorithm: "ou" },
-            { name: "Half Time Corners", isBold: true, pattern: "score_ht_corners" },
-            { name: "Corners: Asian Handicap", scoreType: "ht_corners", market: "ah", algorithm: "ah" },
-            { name: "Corners: Over / Under", scoreType: "ht_corners", market: "ou", algorithm: "ou" },
-            { name: "Half Time Total", isBold: true, pattern: "total_ht" },
+
             { name: "Overall", isBold: true, pattern: "total" },
         ],
         start() {
@@ -122,8 +125,8 @@
 
                 $(elem).find("tr").each((_, row) => {
                     if (!$(row).find("td:first").text().includes(matchName)) return;
-                    const [ftScore, htScore, ftCornerScore, htCornerScore] = $(row).find("td").map((_, x) => $(x).text()).slice(1);
-
+                    const [ftScore, htScore, ftCornerScore, htCornerScore, timer] = $(row).find("td").map((_, x) => $(x).text()).slice(1);
+                    this.fixedHt = timer > "45:00";
                     for (let i = -this.scoreRange; i <= this.scoreRange; i++) {
                         this.setScore("forecast_score_ft", ftScore, i) && (this.hasScore = true);
                         this.setScore("forecast_score_ht", htScore, i) && (this.hasScore = true);
@@ -186,6 +189,16 @@
                 });
                 utils.colorWinLoss($(`#forecast_total_ft_${i}`).text(utils.toAmountStr(ftForecast)));
                 utils.colorWinLoss($(`#forecast_total_ht_${i}`).text(utils.toAmountStr(htForecast)));
+                utils.colorWinLoss($(`#forecast_total_${i}`).text(utils.toAmountStr(ftForecast + htForecast)));
+            }
+
+            if (!this.fixedHt) return;
+
+            for (let i = -this.scoreRange; i <= this.scoreRange; i++) {
+                if (i === 0) continue;
+                const ftForecast = utils.parseAmount($(`#forecast_total_ft_${i}`).text());
+                const htForecast = utils.parseAmount($(`#forecast_total_ht_0`).text());
+                $(`#forecast_total_ht_${i}`).text("");
                 utils.colorWinLoss($(`#forecast_total_${i}`).text(utils.toAmountStr(ftForecast + htForecast)));
             }
         },
@@ -423,8 +436,14 @@
                     utils.colorWinLoss($(`#forecast_total_${market}`).text(utils.toAmountStr(totalForecast)));
                 }
 
-                if (this.hasScore)
-                    utils.colorWinLoss($(`#forecast_total_${scoreType}_${market}_${scoreIndex}`).text(utils.toAmountStr(totalForecast)));
+                if (this.hasScore) {
+                    if (scoreIndex !== 0 && this.fixedHt && scoreType.includes("ht")) {
+                        $(`#forecast_score_${scoreType}_${scoreIndex}`).text("");
+                        $(`#forecast_total_${scoreType}_${market}_${scoreIndex}`).text("");
+                    } else {
+                        utils.colorWinLoss($(`#forecast_total_${scoreType}_${market}_${scoreIndex}`).text(utils.toAmountStr(totalForecast)));
+                    }
+                }
 
                 // Hide void and cashout columns
                 [
@@ -435,14 +454,14 @@
                     "Away Stake", "Away Void Stake", "Away CashOut Stake", "Away Liability"
                 ].forEach(colName => {
                     const colNum = headers.indexOf(colName) + 1;
-                    if (colNum == 0) return;
+                    if (colNum === 0) return;
                     table.find("tr").find(`th:nth-child(${colNum}),td:nth-child(${colNum})`).hide();
                 });
 
                 // Color win/loss columns
                 ["CashOut WinLoss", "Forecast"].forEach(colName => {
                     const colNum = headers.indexOf(colName) + 1;
-                    if (colNum == 0) return;
+                    if (colNum === 0) return;
                     table.find("tr").find(`th:nth-child(${colNum}),td:nth-child(${colNum})`)
                         .each((_, td) => utils.colorWinLoss($(td)));
                 });
