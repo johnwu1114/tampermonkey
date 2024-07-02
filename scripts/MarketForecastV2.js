@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Market Forecast V2
 // @namespace    http://tampermonkey.net/
-// @version      2.6
+// @version      2.7
 // @description  Forecast market results based on the score inputted by the user in Kibana dashboard.
 // @author       John Wu
 // @match        http://*.252:5601/*
@@ -18,7 +18,7 @@
 
     const forecastV2 = {
         scriptName: "MarketForecastV2",
-        version: "2.6",
+        version: "2.7",
         enabled: false,
         summaryCount: 0,
         hasScore: false,
@@ -27,6 +27,7 @@
         processing: undefined,
         latestUpdate: 0,
         fixedHt: false,
+        fixedFt: false,
         templates: [
             { name: "Full Time", isBold: true, isColspan: true, align: "center" },
             { name: "Full Time", isBold: true, pattern: "score_ft", align: "center" },
@@ -54,6 +55,18 @@
             { name: "Corners: Asian Handicap", scoreType: "ht_corners", market: "ah", algorithm: "ah", align: "right" },
             { name: "Corners: Over / Under", scoreType: "ht_corners", market: "ou", algorithm: "ou", align: "right" },
             { name: "Half Time Total", isBold: true, pattern: "total_ht", align: "right" },
+
+            { name: "Extra Time", isBold: true, isColspan: true, align: "center", isExtraTime: true },
+            { name: "Extra Time", isBold: true, pattern: "score_et", align: "center", isExtraTime: true },
+            { name: "1 x 2", scoreType: "et", market: "1x2", algorithm: "1x2", align: "right", isExtraTime: true },
+            { name: "Asian Handicap", scoreType: "et", market: "ah", algorithm: "ah", align: "right", isExtraTime: true },
+            { name: "Over / Under", scoreType: "et", market: "ou", algorithm: "ou", align: "right", isExtraTime: true },
+            { name: "Team Goals Over/Under", scoreType: "et", market: "tgou", algorithm: "ou", align: "right", isExtraTime: true },
+            { name: "Extra Time Corners", isBold: true, pattern: "score_et_corners", align: "center", isExtraTime: true },
+            { name: "Corners: Over / Under", scoreType: "et_corners", market: "ou", algorithm: "ou", align: "right", isExtraTime: true },
+            { name: "Penalty (Inc. Death)", isBold: true, pattern: "score_et_penalty", align: "center", isExtraTime: true },
+            { name: "Over / Under", scoreType: "et_penalty", market: "ou", algorithm: "ou", align: "right", isExtraTime: true },
+            { name: "Extra Time Total", isBold: true, pattern: "total_et", align: "right", isExtraTime: true },
 
             { name: "Overall", isBold: true, pattern: "total", align: "right" }
         ],
@@ -89,8 +102,8 @@
             const table = $("#forecast_summary");
 
             this.templates.forEach(item => {
-                const { name, isBold, isColspan, pattern, scoreType, market, align } = item;
-                const row = $("<tr/>");
+                const { name, isBold, isColspan, pattern, scoreType, market, align, isExtraTime } = item;
+                const row = $(`<tr data-extra-time='${isExtraTime}'>`);
 
                 if (isBold) row.css("border-top", "solid").css("background-color", "#eee").css("font-weight", "bold");
 
@@ -125,13 +138,26 @@
 
                 $(elem).find("tr").each((_, row) => {
                     if (!$(row).find("td:first").text().includes(matchName)) return;
-                    const [ftScore, htScore, ftCornerScore, htCornerScore, timer] = $(row).find("td").map((_, x) => $(x).text()).slice(1);
+                    const [
+                        ftScore,
+                        htScore,
+                        ftCornerScore,
+                        htCornerScore,
+                        timer,
+                        etScore,
+                        etCornerScore,
+                        etPenaltyScore,
+                    ] = $(row).find("td").map((_, x) => $(x).text()).slice(1);
                     this.fixedHt = parseInt(timer.replace(":", "")) > 4500;
+                    this.fixedFt = parseInt(timer.replace(":", "")) > 9000;
                     for (let i = -this.scoreRange; i <= this.scoreRange; i++) {
                         this.setScore("forecast_score_ft", ftScore, i) && (this.hasScore = true);
                         this.setScore("forecast_score_ht", htScore, i) && (this.hasScore = true);
                         this.setScore("forecast_score_ft_corners", ftCornerScore, i) && (this.hasScore = true);
                         this.setScore("forecast_score_ht_corners", htCornerScore, i) && (this.hasScore = true);
+                        this.setScore("forecast_score_et", etScore, i) && (this.hasScore = true);
+                        this.setScore("forecast_score_et_corners", etCornerScore, i) && (this.hasScore = true);
+                        this.setScore("forecast_score_et_penalty", etPenaltyScore, i) && (this.hasScore = true);
                     }
                 });
             });
@@ -212,25 +238,37 @@
             for (let i = -this.scoreRange; i <= this.scoreRange; i++) {
                 let ftForecast = 0;
                 let htForecast = 0;
+                let etForecast = 0;
                 $(`[data-total='${i}']`).each((_, elem) => {
                     if ($(elem).attr("id").includes("_ft_"))
                         ftForecast += utils.parseAmount($(elem).text());
-                    else
+                    else if ($(elem).attr("id").includes("_ht_"))
                         htForecast += utils.parseAmount($(elem).text());
+                    else if ($(elem).attr("id").includes("_et_"))
+                        etForecast += utils.parseAmount($(elem).text());
                 });
                 utils.colorWinLoss($(`#forecast_total_ft_${i}`).text(utils.toAmountStr(ftForecast)));
                 utils.colorWinLoss($(`#forecast_total_ht_${i}`).text(utils.toAmountStr(htForecast)));
-                utils.colorWinLoss($(`#forecast_total_${i}`).text(utils.toAmountStr(ftForecast + htForecast)));
+                utils.colorWinLoss($(`#forecast_total_et_${i}`).text(utils.toAmountStr(etForecast)));
+                utils.colorWinLoss($(`#forecast_total_${i}`).text(utils.toAmountStr(ftForecast + htForecast + etForecast)));
             }
 
-            if (!this.fixedHt) return;
+            if (this.fixedFt) {
+                $(`tr[data-extra-time="true"]`).show();
+            } else {
+                $(`tr[data-extra-time="true"]`).hide();
+            }
+
+            if (!this.fixedHt && !this.fixedFt) return;
 
             for (let i = -this.scoreRange; i <= this.scoreRange; i++) {
                 if (i === 0) continue;
-                const ftForecast = utils.parseAmount($(`#forecast_total_ft_${i}`).text());
+                const ftForecast = utils.parseAmount($(`#forecast_total_ft_${this.fixedFt ? 0 : i}`).text());
                 const htForecast = utils.parseAmount($(`#forecast_total_ht_0`).text());
+                const etForecast = utils.parseAmount($(`#forecast_total_et_${i}`).text());
                 $(`#forecast_total_ht_${i}`).text("");
-                utils.colorWinLoss($(`#forecast_total_${i}`).text(utils.toAmountStr(ftForecast + htForecast)));
+                if (this.fixedFt) $(`#forecast_total_ft_${i}`).text("");
+                utils.colorWinLoss($(`#forecast_total_${i}`).text(utils.toAmountStr(ftForecast + htForecast + etForecast)));
             }
         },
         renderSingleOutcome(scoreType, market, scoreIndex, tables, outcomeFunc) {
@@ -384,10 +422,11 @@
                     utils.colorWinLoss($(`#forecast_total_${market}`).text(utils.toAmountStr(totalForecast)));
                 }
 
-                if (scoreIndex !== 0 && this.fixedHt && scoreType.includes("ht")) {
+                if (scoreIndex !== 0 && ((this.fixedHt && scoreType.includes("ht")) || (this.fixedFt && scoreType.includes("ft")))) {
                     $(`#forecast_score_${scoreType}_${scoreIndex}`).text("");
                     $(`#forecast_total_${scoreType}_${market}_${scoreIndex}`).text("");
-                } else {
+                }
+                else {
                     utils.colorWinLoss($(`#forecast_total_${scoreType}_${market}_${scoreIndex}`).text(utils.toAmountStr(totalForecast)));
                 }
 
