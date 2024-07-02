@@ -19,7 +19,10 @@ This script is based on the [Tampermonkey](https://www.tampermonkey.net/#google_
    ![utilities](images/utilities.png)  
 
 2. Import the script from the URL by following the steps below:  
-   > Script URL: https://raw.githubusercontent.com/johnwu1114/tampermonkey/main/scripts/MarketForecast.js  
+   > Script URL: 
+      - https://raw.githubusercontent.com/johnwu1114/tampermonkey/main/scripts/MarketForecast.js   
+      - https://raw.githubusercontent.com/johnwu1114/tampermonkey/main/scripts/MarketForecastV2.js   
+
    ![import-script](images/import-script.png)  
    ![install](images/install.png)  
 
