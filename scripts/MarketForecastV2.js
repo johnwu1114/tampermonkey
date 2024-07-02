@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Market Forecast V2
 // @namespace    http://tampermonkey.net/
-// @version      2.7
+// @version      2.8
 // @description  Forecast market results based on the score inputted by the user in Kibana dashboard.
 // @author       John Wu
 // @match        http://*.252:5601/*
@@ -18,7 +18,7 @@
 
     const forecastV2 = {
         scriptName: "MarketForecastV2",
-        version: "2.7",
+        version: "2.8",
         enabled: false,
         summaryCount: 0,
         hasScore: false,
@@ -181,6 +181,17 @@
         },
         setupTable() {
             console.log("Setting up forecast tables...");
+
+            $("div.euiPanel").each((_, elem) => {
+                const title = $(elem).find(".embPanel__titleText").text();
+                if (title.includes("FT")) {
+                    $(elem).css("background-color", "#efe");
+                } else if (title.includes("HT")) {
+                    $(elem).css("background-color", "#eef");
+                } else if (title.includes("ET")) {
+                    $(elem).css("background-color", "#fee");
+                }
+            });
 
             this.templates.forEach(template => {
                 if (template.isBold) return;
