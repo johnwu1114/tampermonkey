@@ -133,31 +133,39 @@
                 if ($(elem).find("label").text().trim() !== "Match") return;
                 matchName = $(elem).find(".euiButtonContent [data-text]").attr("data-text");
             });
-            $(".euiPanel").each((_, elem) => {
-                if ($(elem).find(".embPanel__titleInner").text().trim() !== "Score Results") return;
+            $("div.euiPanel").each((_, elem) => {
+                const title = $(elem).find(".embPanel__titleText").text().trim();
+                if (title.includes("FT")) {
+                    $(elem).css("background-color", "#efe");
+                } else if (title.includes("HT")) {
+                    $(elem).css("background-color", "#eef");
+                } else if (title.includes("ET")) {
+                    $(elem).css("background-color", "#fee");
+                }
 
-                $(elem).find("tr").each((_, row) => {
-                    if (!$(row).find("td:first").text().includes(matchName)) return;
-                    const [
-                        ftScore,
-                        htScore,
-                        ftCornerScore,
-                        htCornerScore,
-                        timer,
-                        etScore,
-                        etCornerScore,
-                        etPenaltyScore,
-                    ] = $(row).find("td").map((_, x) => $(x).text()).slice(1);
-                    this.fixedHt = parseInt(timer.replace(":", "")) > 4500;
-                    this.fixedFt = parseInt(timer.replace(":", "")) > 9000;
+                if (title !== "Score Results") return;
+
+                const headers = $(elem).find("thead th").map((_, th) => $(th).text().trim()).get();
+                $(elem).find("tbody tr").each((_, row) => {
+                    if (!$(row).find("td:first").text().includes(matchName)) {
+                        $(row).hide();
+                        return;
+                    }
+                    let cells = {};
+                    $(row).find("td").each((index, cell) => {
+                        cells[index] = cells[headers[index]] = $(cell).text().trim();
+                    });
+                    const timer = parseInt(cells["Timer"].replace(":", ""));
+                    this.fixedHt = timer > 4500;
+                    this.fixedFt = timer > 9000;
                     for (let i = -this.scoreRange; i <= this.scoreRange; i++) {
-                        this.setScore("forecast_score_ft", ftScore, i) && (this.hasScore = true);
-                        this.setScore("forecast_score_ht", htScore, i) && (this.hasScore = true);
-                        this.setScore("forecast_score_ft_corners", ftCornerScore, i) && (this.hasScore = true);
-                        this.setScore("forecast_score_ht_corners", htCornerScore, i) && (this.hasScore = true);
-                        this.setScore("forecast_score_et", etScore, i) && (this.hasScore = true);
-                        this.setScore("forecast_score_et_corners", etCornerScore, i) && (this.hasScore = true);
-                        this.setScore("forecast_score_et_penalty", etPenaltyScore, i) && (this.hasScore = true);
+                        this.setScore("forecast_score_ft", cells["Full Time"], i) && (this.hasScore = true);
+                        this.setScore("forecast_score_ht", cells["Half Time"], i) && (this.hasScore = true);
+                        this.setScore("forecast_score_ft_corners", cells["Full Time Corner"], i) && (this.hasScore = true);
+                        this.setScore("forecast_score_ht_corners", cells["Half Time Corner"], i) && (this.hasScore = true);
+                        this.setScore("forecast_score_et", cells["Extra Full Time"], i) && (this.hasScore = true);
+                        this.setScore("forecast_score_et_corners", cells["Extra Full Time Corner"], i) && (this.hasScore = true);
+                        this.setScore("forecast_score_et_penalty", cells["Penalty (Inc. Death)"], i) && (this.hasScore = true);
                     }
                 });
             });
@@ -181,17 +189,6 @@
         },
         setupTable() {
             console.log("Setting up forecast tables...");
-
-            $("div.euiPanel").each((_, elem) => {
-                const title = $(elem).find(".embPanel__titleText").text();
-                if (title.includes("FT")) {
-                    $(elem).css("background-color", "#efe");
-                } else if (title.includes("HT")) {
-                    $(elem).css("background-color", "#eef");
-                } else if (title.includes("ET")) {
-                    $(elem).css("background-color", "#fee");
-                }
-            });
 
             this.templates.forEach(template => {
                 if (template.isBold) return;
