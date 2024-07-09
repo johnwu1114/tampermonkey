@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Market Forecast V2
 // @namespace    http://tampermonkey.net/
-// @version      2.8
+// @version      2.9
 // @description  Forecast market results based on the score inputted by the user in Kibana dashboard.
 // @author       John Wu
 // @match        http://*.252:5601/*
@@ -18,7 +18,7 @@
 
     const forecastV2 = {
         scriptName: "MarketForecastV2",
-        version: "2.8",
+        version: "2.9",
         enabled: false,
         summaryCount: 0,
         hasScore: false,
@@ -151,6 +151,7 @@
                         $(row).hide();
                         return;
                     }
+                    $(row).show();
                     let cells = {};
                     $(row).find("td").each((index, cell) => {
                         cells[index] = cells[headers[index]] = $(cell).text().trim();
@@ -159,12 +160,17 @@
                     this.fixedHt = timer > 4500;
                     this.fixedFt = timer > 9000;
                     for (let i = -this.scoreRange; i <= this.scoreRange; i++) {
-                        this.setScore("forecast_score_ft", cells["Full Time"], i) && (this.hasScore = true);
-                        this.setScore("forecast_score_ht", cells["Half Time"], i) && (this.hasScore = true);
-                        this.setScore("forecast_score_ft_corners", cells["Full Time Corner"], i) && (this.hasScore = true);
-                        this.setScore("forecast_score_ht_corners", cells["Half Time Corner"], i) && (this.hasScore = true);
-                        this.setScore("forecast_score_et", cells["Extra Full Time"], i) && (this.hasScore = true);
-                        this.setScore("forecast_score_et_corners", cells["Extra Full Time Corner"], i) && (this.hasScore = true);
+                        const [home1stScore, away1stScore] = cells["1st Half"].split("-").map(Number);
+                        const [home2ndScore, away2ndScore] = cells["2nd Half"].split("-").map(Number);
+                        this.setScore("forecast_score_ft", `${(home1stScore + home2ndScore)}-${(away1stScore + away2ndScore)}`, i) && (this.hasScore = true);
+                        this.setScore("forecast_score_ht", cells["1st Half"], i) && (this.hasScore = true);
+
+                        const [home1stCorner, away1stCorner] = cells["1st Half Corner"].split("-").map(Number);
+                        const [home2ndCorner, away2ndCorner] = cells["2nd Half Corner"].split("-").map(Number);
+                        this.setScore("forecast_score_ft_corners", `${(home1stCorner + home2ndCorner)}-${(away1stCorner + away2ndCorner)}`, i) && (this.hasScore = true);
+                        this.setScore("forecast_score_ht_corners", cells["1st Half Corner"], i) && (this.hasScore = true);
+                        this.setScore("forecast_score_et", cells["Extra Time"], i) && (this.hasScore = true);
+                        this.setScore("forecast_score_et_corners", cells["Extra Time Corner"], i) && (this.hasScore = true);
                         this.setScore("forecast_score_et_penalty", cells["Penalty (Inc. Death)"], i) && (this.hasScore = true);
                     }
                 });
