@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Market Forecast V2
 // @namespace    http://tampermonkey.net/
-// @version      2.9
+// @version      2.10
 // @description  Forecast market results based on the score inputted by the user in Kibana dashboard.
 // @author       John Wu
 // @match        http://*.252:5601/*
@@ -18,7 +18,7 @@
 
     const forecastV2 = {
         scriptName: "MarketForecastV2",
-        version: "2.9",
+        version: "2.10",
         enabled: false,
         summaryCount: 0,
         hasScore: false,
@@ -229,9 +229,11 @@
                         case "htft":
                             this.renderTable(template.scoreType, template.market, i, this.renderSingleOutcome.bind(this), () => {
                                 const [ftHomeScore, ftAwayScore] = $(`#forecast_score_ft_${i}`).text().split("-").map(Number);
-                                const [htHomeScore, htAwayScore] = $(`#forecast_score_ht_${i}`).text().split("-").map(Number);
                                 const ftWinner = ftHomeScore === ftAwayScore ? "Draw" : ftHomeScore > ftAwayScore ? "Home" : "Away";
+
+                                const [htHomeScore, htAwayScore] = $(`#forecast_score_ht_${this.fixedHt ? 0 : i}`).text().split("-").map(Number);
                                 const htWinner = htHomeScore === htAwayScore ? "Draw" : htHomeScore > htAwayScore ? "Home" : "Away";
+
                                 return `${htWinner}/${ftWinner}`;
                             });
                             break;
