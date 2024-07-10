@@ -3,12 +3,13 @@ const common = {
         const markdownBody = $("div.kbnMarkdown__body");
         if (!markdownBody.length) return false;
 
+        version = version.split(".").map(x => x.padStart(10, "0")).join("");
         let mdScriptName = "";
         let mdVersion = "";
         markdownBody.find("code").each((_, code) => {
             const text = $(code).text().trim();
             if (text.indexOf("version:") !== -1) {
-                mdVersion = text.replace("version:", "").trim();
+                mdVersion = text.replace("version:", "").trim().split(".").map(x => x.padStart(10, "0")).join("");
             } else if (text.replace("script:", "").trim() === scriptName) {
                 mdScriptName = scriptName
             }
