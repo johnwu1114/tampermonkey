@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Market Forecast V2
 // @namespace    http://tampermonkey.net/
-// @version      2.10
+// @version      2.11
 // @description  Forecast market results based on the score inputted by the user in Kibana dashboard.
 // @author       John Wu
 // @match        http://*.252:5601/*
@@ -18,7 +18,7 @@
 
     const forecastV2 = {
         scriptName: "MarketForecastV2",
-        version: "2.10",
+        version: "2.11",
         enabled: false,
         summaryCount: 0,
         hasScore: false,
@@ -38,9 +38,12 @@
             { name: "Both Teams to Score", scoreType: "ft", market: "bts", algorithm: "bts", align: "right" },
             { name: "Team Goals Over/Under", scoreType: "ft", market: "tgou", algorithm: "ou", align: "right" },
             { name: "Half-time / Full-time", scoreType: "ft", market: "htft", algorithm: "htft", align: "right" },
-            { name: "Full Time Corners", isBold: true, pattern: "score_ft_corners", align: "center" },
+            { name: "Corners", isBold: true, pattern: "score_ft_corners", align: "center" },
             { name: "Corners: Asian Handicap", scoreType: "ft_corners", market: "ah", algorithm: "ah", align: "right" },
             { name: "Corners: Over / Under", scoreType: "ft_corners", market: "ou", algorithm: "ou", align: "right" },
+            { name: "Bookings", isBold: true, pattern: "score_ft_bookings", align: "center" },
+            { name: "Bookings: Asian Handicap", scoreType: "ft_bookings", market: "ah", algorithm: "ah", align: "right" },
+            { name: "Bookings: Over / Under", scoreType: "ft_bookings", market: "ou", algorithm: "ou", align: "right" },
             { name: "Full Time Total", isBold: true, pattern: "total_ft", align: "right" },
 
             { name: "Half Time", isBold: true, isColspan: true, align: "center" },
@@ -86,11 +89,11 @@
                         }
                     });
                 } else if (this.enabled && mutation.target.tagName === "TBODY") {
-                    this.clearTable();
+                    this.clearSummary();
                     clearTimeout(this.processing);
                     this.processing = setTimeout(() => {
                         this.updateScore();
-                        this.setupTable();
+                        this.setupSummary();
                     }, this.delayTime);
                 }
             });
@@ -162,38 +165,40 @@
                     for (let i = -this.scoreRange; i <= this.scoreRange; i++) {
                         const [home1stScore, away1stScore] = cells["1st Half"].split("-").map(Number);
                         const [home2ndScore, away2ndScore] = cells["2nd Half"].split("-").map(Number);
-                        this.setScore("forecast_score_ft", `${(home1stScore + home2ndScore)}-${(away1stScore + away2ndScore)}`, i) && (this.hasScore = true);
-                        this.setScore("forecast_score_ht", cells["1st Half"], i) && (this.hasScore = true);
+                        this.setFutureScore(i, "forecast_score_ft", `${(home1stScore + home2ndScore)}-${(away1stScore + away2ndScore)}`) && (this.hasScore = true);
+                        this.setFutureScore(i, "forecast_score_ht", cells["1st Half"]) && (this.hasScore = true);
 
                         const [home1stCorner, away1stCorner] = cells["1st Half Corner"].split("-").map(Number);
                         const [home2ndCorner, away2ndCorner] = cells["2nd Half Corner"].split("-").map(Number);
-                        this.setScore("forecast_score_ft_corners", `${(home1stCorner + home2ndCorner)}-${(away1stCorner + away2ndCorner)}`, i) && (this.hasScore = true);
-                        this.setScore("forecast_score_ht_corners", cells["1st Half Corner"], i) && (this.hasScore = true);
-                        this.setScore("forecast_score_et", cells["Extra Time"], i) && (this.hasScore = true);
-                        this.setScore("forecast_score_et_corners", cells["Extra Time Corner"], i) && (this.hasScore = true);
-                        this.setScore("forecast_score_et_penalty", cells["Penalty (Inc. Death)"], i) && (this.hasScore = true);
+                        this.setFutureScore(i, "forecast_score_ft_corners", `${(home1stCorner + home2ndCorner)}-${(away1stCorner + away2ndCorner)}`) && (this.hasScore = true);
+                        this.setFutureScore(i, "forecast_score_ht_corners", cells["1st Half Corner"]) && (this.hasScore = true);
+
+                        this.setFutureScore(i, "forecast_score_ft_bookings", cells["Full Time Bookings"]) && (this.hasScore = true);
+                        this.setFutureScore(i, "forecast_score_et", cells["Extra Time"]) && (this.hasScore = true);
+                        this.setFutureScore(i, "forecast_score_et_corners", cells["Extra Time Corner"]) && (this.hasScore = true);
+                        this.setFutureScore(i, "forecast_score_et_penalty", cells["Penalty (Inc. Death)"]) && (this.hasScore = true);
                     }
                 });
             });
         },
-        setScore(key, score, scoreIndex) {
+        setFutureScore(scoreIndex, pattern, score) {
             let [homeScore, awayScore] = score.split("-").map(Number);
             if (scoreIndex < 0) homeScore += Math.abs(scoreIndex);
             else if (scoreIndex > 0) awayScore += scoreIndex;
 
             const newScore = `${homeScore}-${awayScore}`;
-            const isScoreChanged = $(`#${key}_${scoreIndex}`).text() !== newScore;
-            $(`#${key}_${scoreIndex}`).text(newScore);
+            const isScoreChanged = $(`#${pattern}_${scoreIndex}`).text() !== newScore;
+            $(`#${pattern}_${scoreIndex}`).text(newScore);
 
             return isScoreChanged;
         },
-        clearTable() {
+        clearSummary() {
             if (Date.now() < this.latestUpdate + this.delayTime) return;
             console.log("Clearing forecast tables...");
             $("#forecast_summary td span").text("Loading...").css("color", "");
             this.latestUpdate = Date.now();
         },
-        setupTable() {
+        setupSummary() {
             console.log("Setting up forecast tables...");
 
             this.templates.forEach(template => {
@@ -208,26 +213,26 @@
                     const [homeScore, awayScore] = score.split("-").map(Number);
                     switch (template.algorithm) {
                         case "ah":
-                            this.renderTable(template.scoreType, template.market, i, this.renderAsianHandicap.bind(this));
+                            this.renderMarketTable(template.scoreType, template.market, i, this.renderAsianHandicap.bind(this));
                             break;
                         case "ou":
-                            this.renderTable(template.scoreType, template.market, i, this.renderOverUnder.bind(this));
+                            this.renderMarketTable(template.scoreType, template.market, i, this.renderOverUnder.bind(this));
                             break;
                         case "1x2":
-                            this.renderTable(template.scoreType, template.market, i, this.renderSingleOutcome.bind(this), () => {
+                            this.renderMarketTable(template.scoreType, template.market, i, this.renderSingleOutcome.bind(this), () => {
                                 return homeScore === awayScore ? "Draw" : homeScore > awayScore ? "Home" : "Away";
                             });
                             break;
                         case "cs":
-                            this.renderTable(template.scoreType, template.market, i, this.renderSingleOutcome.bind(this), () => score);
+                            this.renderMarketTable(template.scoreType, template.market, i, this.renderSingleOutcome.bind(this), () => score);
                             break;
                         case "bts":
-                            this.renderTable(template.scoreType, template.market, i, this.renderSingleOutcome.bind(this), () => {
+                            this.renderMarketTable(template.scoreType, template.market, i, this.renderSingleOutcome.bind(this), () => {
                                 return homeScore > 0 && awayScore > 0 ? "Yes" : "No";
                             });
                             break;
                         case "htft":
-                            this.renderTable(template.scoreType, template.market, i, this.renderSingleOutcome.bind(this), () => {
+                            this.renderMarketTable(template.scoreType, template.market, i, this.renderSingleOutcome.bind(this), () => {
                                 const [ftHomeScore, ftAwayScore] = $(`#forecast_score_ft_${i}`).text().split("-").map(Number);
                                 const ftWinner = ftHomeScore === ftAwayScore ? "Draw" : ftHomeScore > ftAwayScore ? "Home" : "Away";
 
@@ -240,16 +245,9 @@
                     }
                 }
             });
-            this.renderTotalForecast();
+            this.renderSummaryTotal();
         },
-        renderTable(scoreType, market, scoreIndex, renderFunc, outcomeFunc) {
-            const target = `${scoreType}_${market}`;
-            $(`#forecast_total_${target}`).text("Loading...").css("color", "");
-            const tables = $(`[data-type="forecast_${target}"]`);
-            if (!tables.length) return;
-            renderFunc(scoreType, market, scoreIndex, tables, outcomeFunc);
-        },
-        renderTotalForecast() {
+        renderSummaryTotal() {
             if (!this.hasScore) return;
             for (let i = -this.scoreRange; i <= this.scoreRange; i++) {
                 let ftForecast = 0;
@@ -287,10 +285,17 @@
                 utils.colorWinLoss($(`#forecast_total_${i}`).text(utils.toAmountStr(ftForecast + htForecast + etForecast)));
             }
         },
+        renderMarketTable(scoreType, market, scoreIndex, renderFunc, outcomeFunc) {
+            const target = `${scoreType}_${market}`;
+            $(`#forecast_total_${target}`).text("Loading...").css("color", "");
+            const tables = $(`[data-type="forecast_${target}"]`);
+            if (!tables.length) return;
+            renderFunc(scoreType, market, scoreIndex, tables, outcomeFunc);
+        },
         renderSingleOutcome(scoreType, market, scoreIndex, tables, outcomeFunc) {
             const outcome = outcomeFunc();
 
-            this.processTables(scoreType, market, scoreIndex, tables, (row, cells) => {
+            this.processMarket(scoreType, market, scoreIndex, tables, (row, cells) => {
                 let {
                     Selection,
                     Score,
@@ -320,7 +325,7 @@
             let forecastGoals = homeScore + awayScore;
             let lastHandicap = 0;
 
-            this.processTables(scoreType, market, scoreIndex, tables, (row, cells) => {
+            this.processMarket(scoreType, market, scoreIndex, tables, (row, cells) => {
                 let {
                     Goals,
                     Team,
@@ -363,7 +368,7 @@
             const [homeScore, awayScore] = $(`#forecast_score_${scoreType}_${scoreIndex}`).text().split("-").map(Number);
             const forecastScoreDiff = homeScore - awayScore;
 
-            this.processTables(scoreType, market, scoreIndex, tables, (row, cells) => {
+            this.processMarket(scoreType, market, scoreIndex, tables, (row, cells) => {
                 let {
                     Score,
                     "Corners Score": CornersScore,
@@ -404,7 +409,7 @@
                 return forecast;
             });
         },
-        processTables(scoreType, market, scoreIndex, tables, processRow) {
+        processMarket(scoreType, market, scoreIndex, tables, processRow) {
             tables.each((_, elem) => {
                 const table = $(elem);
                 let totalForecast = 0;
