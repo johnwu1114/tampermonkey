@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Market Forecast V2
 // @namespace    http://tampermonkey.net/
-// @version      2.11
+// @version      2.12
 // @description  Forecast market results based on the score inputted by the user in Kibana dashboard.
 // @author       John Wu
 // @match        http://*.252:5601/*
@@ -18,7 +18,7 @@
 
     const forecastV2 = {
         scriptName: "MarketForecastV2",
-        version: "2.11",
+        version: "2.12",
         enabled: false,
         summaryCount: 0,
         hasScore: false,
@@ -85,20 +85,20 @@
                     $(mutation.addedNodes).each((_, addedNode) => {
                         if ($(addedNode).is("div.kbnMarkdown__body") || $(addedNode).find("div.kbnMarkdown__body").length) {
                             this.enabled = common.checkVersion(this.scriptName, this.version);
-                            if (this.enabled) this.setupMarkdown();
+                            if (this.enabled) this.renderSummary();
                         }
                     });
                 } else if (this.enabled && mutation.target.tagName === "TBODY") {
                     this.clearSummary();
                     clearTimeout(this.processing);
                     this.processing = setTimeout(() => {
-                        this.updateScore();
-                        this.setupSummary();
+                        this.updateScoreResults();
+                        this.calculateSummary();
                     }, this.delayTime);
                 }
             });
         },
-        setupMarkdown() {
+        renderSummary() {
             console.log("Setting up markdown...");
             const markdownBody = $("div.kbnMarkdown__body");
             markdownBody.append("<table id='forecast_summary'/>");
@@ -130,7 +130,7 @@
 
             markdownBody.append(table);
         },
-        updateScore() {
+        updateScoreResults() {
             let matchName = "";
             $(".euiFormControlLayout").each((_, elem) => {
                 if ($(elem).find("label").text().trim() !== "Match") return;
@@ -198,7 +198,7 @@
             $("#forecast_summary td span").text("Loading...").css("color", "");
             this.latestUpdate = Date.now();
         },
-        setupSummary() {
+        calculateSummary() {
             console.log("Setting up forecast tables...");
 
             this.templates.forEach(template => {
@@ -213,26 +213,26 @@
                     const [homeScore, awayScore] = score.split("-").map(Number);
                     switch (template.algorithm) {
                         case "ah":
-                            this.renderMarketTable(template.scoreType, template.market, i, this.renderAsianHandicap.bind(this));
+                            this.calculateAsianHandicap(template.scoreType, template.market, i);
                             break;
                         case "ou":
-                            this.renderMarketTable(template.scoreType, template.market, i, this.renderOverUnder.bind(this));
+                            this.calculateOverUnder(template.scoreType, template.market, i);
                             break;
                         case "1x2":
-                            this.renderMarketTable(template.scoreType, template.market, i, this.renderSingleOutcome.bind(this), () => {
+                            this.calculateSingleOutcome(template.scoreType, template.market, i, () => {
                                 return homeScore === awayScore ? "Draw" : homeScore > awayScore ? "Home" : "Away";
                             });
                             break;
                         case "cs":
-                            this.renderMarketTable(template.scoreType, template.market, i, this.renderSingleOutcome.bind(this), () => score);
+                            this.calculateSingleOutcome(template.scoreType, template.market, i, () => score);
                             break;
                         case "bts":
-                            this.renderMarketTable(template.scoreType, template.market, i, this.renderSingleOutcome.bind(this), () => {
+                            this.calculateSingleOutcome(template.scoreType, template.market, i, () => {
                                 return homeScore > 0 && awayScore > 0 ? "Yes" : "No";
                             });
                             break;
                         case "htft":
-                            this.renderMarketTable(template.scoreType, template.market, i, this.renderSingleOutcome.bind(this), () => {
+                            this.calculateSingleOutcome(template.scoreType, template.market, i, () => {
                                 const [ftHomeScore, ftAwayScore] = $(`#forecast_score_ft_${i}`).text().split("-").map(Number);
                                 const ftWinner = ftHomeScore === ftAwayScore ? "Draw" : ftHomeScore > ftAwayScore ? "Home" : "Away";
 
@@ -245,9 +245,9 @@
                     }
                 }
             });
-            this.renderSummaryTotal();
+            this.calculateSummaryTotal();
         },
-        renderSummaryTotal() {
+        calculateSummaryTotal() {
             if (!this.hasScore) return;
             for (let i = -this.scoreRange; i <= this.scoreRange; i++) {
                 let ftForecast = 0;
@@ -285,17 +285,9 @@
                 utils.colorWinLoss($(`#forecast_total_${i}`).text(utils.toAmountStr(ftForecast + htForecast + etForecast)));
             }
         },
-        renderMarketTable(scoreType, market, scoreIndex, renderFunc, outcomeFunc) {
-            const target = `${scoreType}_${market}`;
-            $(`#forecast_total_${target}`).text("Loading...").css("color", "");
-            const tables = $(`[data-type="forecast_${target}"]`);
-            if (!tables.length) return;
-            renderFunc(scoreType, market, scoreIndex, tables, outcomeFunc);
-        },
-        renderSingleOutcome(scoreType, market, scoreIndex, tables, outcomeFunc) {
+        calculateSingleOutcome(scoreType, market, scoreIndex, outcomeFunc) {
             const outcome = outcomeFunc();
-
-            this.processMarket(scoreType, market, scoreIndex, tables, (row, cells) => {
+            this.renderMarket(scoreType, market, scoreIndex, (row, cells) => {
                 let {
                     Selection,
                     Score,
@@ -320,12 +312,12 @@
                 return forecast;
             });
         },
-        renderOverUnder(scoreType, market, scoreIndex, tables) {
+        calculateOverUnder(scoreType, market, scoreIndex) {
             const [homeScore, awayScore] = $(`#forecast_score_${scoreType}_${scoreIndex}`).text().split("-").map(Number);
             let forecastGoals = homeScore + awayScore;
             let lastHandicap = 0;
 
-            this.processMarket(scoreType, market, scoreIndex, tables, (row, cells) => {
+            this.renderMarket(scoreType, market, scoreIndex, (row, cells) => {
                 let {
                     Goals,
                     Team,
@@ -364,11 +356,11 @@
                 return forecast;
             });
         },
-        renderAsianHandicap(scoreType, market, scoreIndex, tables) {
+        calculateAsianHandicap(scoreType, market, scoreIndex) {
             const [homeScore, awayScore] = $(`#forecast_score_${scoreType}_${scoreIndex}`).text().split("-").map(Number);
             const forecastScoreDiff = homeScore - awayScore;
 
-            this.processMarket(scoreType, market, scoreIndex, tables, (row, cells) => {
+            this.renderMarket(scoreType, market, scoreIndex, (row, cells) => {
                 let {
                     Score,
                     "Corners Score": CornersScore,
@@ -398,18 +390,31 @@
                 Handicap = utils.parseAmount(Handicap);
                 let originalHandicap = Handicap - scoreDiff;
                 let outcome = forecastScoreDiff + originalHandicap;
-                let forecast = common.calculateAsianHandicap(outcome, HomeStake, HomeLiability);
+                let forecast = this.getAsianHandicapWinLoss(outcome, HomeStake, HomeLiability);
 
                 originalHandicap = Handicap - scoreDiff * -1;
                 outcome = forecastScoreDiff * -1 + originalHandicap;
-                forecast += common.calculateAsianHandicap(outcome, AwayStake, AwayLiability);
+                forecast += this.getAsianHandicapWinLoss(outcome, AwayStake, AwayLiability);
 
                 forecast += CashOutWinLoss;
                 if (scoreIndex === 0) utils.colorWinLoss(row.find("td:last").text(utils.toAmountStr(forecast)));
                 return forecast;
             });
         },
-        processMarket(scoreType, market, scoreIndex, tables, processRow) {
+        getAsianHandicapWinLoss(outcome, stake, liability) {
+            if (outcome >= 0.5) return -liability;
+            if (outcome === 0.25) return -liability / 2;
+            if (outcome === 0) return 0;
+            if (outcome === -0.25) return stake / 2;
+            if (outcome <= -0.5) return stake;
+            return 0;
+        },
+        renderMarket(scoreType, market, scoreIndex, processRow) {
+            const target = `${scoreType}_${market}`;
+            $(`#forecast_total_${target}`).text("Loading...").css("color", "");
+            const tables = $(`[data-type="forecast_${target}"]`);
+            if (!tables.length) return;
+
             tables.each((_, elem) => {
                 const table = $(elem);
                 let totalForecast = 0;
